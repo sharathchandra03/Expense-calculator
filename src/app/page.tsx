@@ -1,0 +1,207 @@
+'use client'
+
+import React, { useState, useEffect } from 'react'
+import { seedDatabaseIfEmpty } from '@/db/schema'
+import { BottomNav, TabType } from '@/components/layout/bottom-nav'
+import { Dashboard } from '@/components/modules/dashboard'
+import { TransactionsLedger } from '@/components/modules/transactions-ledger'
+import { AssetsTracker } from '@/components/modules/assets-tracker'
+import { ForecastEngine } from '@/components/modules/forecast-engine'
+import { Settings } from '@/components/modules/settings'
+import { SpendingIntelligence } from '@/components/modules/spending-intelligence'
+import { LendingDashboard } from '@/components/modules/lending-dashboard'
+import { GlobalSearch } from '@/components/modules/global-search'
+import { Onboarding } from '@/components/modules/onboarding'
+import { QuickAddModal } from '@/components/modules/quick-add-modal'
+import { BillsManager } from '@/components/modules/bills-manager'
+import { BudgetManager } from '@/components/modules/budget-manager'
+import { FinancialReports } from '@/components/modules/financial-reports'
+import { NotificationsCenter } from '@/components/modules/notifications-center'
+import { GoalsDashboard } from '@/components/modules/goals-dashboard'
+import { InvestmentTracker } from '@/components/modules/investment-tracker'
+import { CustomCategories } from '@/components/modules/custom-categories'
+import { AccountManager } from '@/components/modules/account-manager'
+import { WeeklyBrief } from '@/components/modules/weekly-brief'
+import { AnimatePresence, motion } from 'framer-motion'
+
+export default function Home() {
+  const [activeTab, setActiveTab] = useState<TabType>('dashboard')
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [isFirstTime, setIsFirstTime] = useState(true)
+  const [dbReady, setDbReady] = useState(false)
+
+  // Seed database on mount
+  useEffect(() => {
+    async function initDB() {
+      try {
+        await seedDatabaseIfEmpty()
+        setDbReady(true)
+      } catch (err) {
+        console.error('Failed to initialize database:', err)
+        setDbReady(true) // continue anyway
+      }
+    }
+    initDB()
+
+    // Check if first time
+    const hasSeenOnboarding = localStorage.getItem('finance-os-onboarding-done')
+    if (hasSeenOnboarding) {
+      setIsFirstTime(false)
+    }
+
+    // Register Service Worker for PWA in production only
+    if (process.env.NODE_ENV === 'production' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then((reg) => {
+        console.log('PWA Service Worker registered successfully:', reg.scope)
+      }).catch((err) => {
+        console.error('PWA Service Worker registration failed:', err)
+      })
+    }
+
+    // Programmatically unregister service workers in development to prevent HMR loop
+    if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const registration of registrations) {
+          registration.unregister().then((success) => {
+            if (success) {
+              console.log('Successfully unregistered stale service worker in development');
+              // Clear caches as well to restore clean state
+              if ('caches' in window) {
+                caches.keys().then((keys) => {
+                  keys.forEach((key) => caches.delete(key));
+                });
+              }
+            }
+          });
+        }
+      });
+    }
+
+    // Global keyboard shortcut for search (Cmd+K or Ctrl+K)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setIsSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  if (!dbReady) {
+    return (
+      <div className="flex flex-1 items-center justify-center bg-[#050505] text-white">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-8 h-8 rounded-full border-4 border-t-primary border-r-transparent animate-spin" />
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+            FinanceOS Initializing...
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Active module renderer with error handling
+  const renderModule = () => {
+    try {
+      switch (activeTab) {
+        case 'dashboard':
+          return <Dashboard key="dashboard" onNavigateToTab={(tab) => setActiveTab(tab)} />
+        case 'insights':
+          return <SpendingIntelligence key="insights" />
+        case 'ledger':
+          return <TransactionsLedger key="ledger" />
+        case 'assets':
+          return <AssetsTracker key="assets" />
+        case 'lending':
+          return <LendingDashboard key="lending" />
+        case 'bills':
+          return <BillsManager key="bills" />
+        case 'budgets':
+          return <BudgetManager key="budgets" />
+        case 'reports':
+          return <FinancialReports key="reports" />
+        case 'notifications':
+          return <NotificationsCenter key="notifications" />
+        case 'goals':
+          return <GoalsDashboard key="goals" />
+        case 'investments':
+          return <InvestmentTracker key="investments" />
+        case 'accounts':
+          return <AccountManager key="accounts" />
+        case 'categories':
+          return <CustomCategories key="categories" />
+        case 'brief':
+          return <WeeklyBrief key="brief" />
+        case 'settings':
+          return <Settings key="settings" />
+        default:
+          return <Dashboard key="dashboard" onNavigateToTab={(tab) => setActiveTab(tab)} />
+      }
+    } catch (error) {
+      console.error('Error rendering module:', error)
+      return (
+        <div className="flex flex-col items-center justify-center py-12 space-y-4">
+          <p className="text-sm text-muted-foreground">Error loading module</p>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className="text-xs px-4 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+          >
+            Return to Dashboard
+          </button>
+        </div>
+      )
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-neutral-900/10 dark:bg-black/90 flex items-center justify-center p-0 md:p-6 transition-colors duration-300">
+      {/* Desktop Container Wrapper Mockup / Mobile Fullbleed */}
+      <div className="w-full h-[100dvh] md:h-[850px] md:max-w-md md:rounded-[3rem] bg-background text-foreground md:border border-border/80 dark:border-border/40 md:shadow-2xl overflow-hidden relative flex flex-col">
+
+        {/* Navigation: pinned top bar + slide-in sidebar + floating add button */}
+        <BottomNav
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onQuickAddClick={() => setIsQuickAddOpen(true)}
+        />
+
+        {/* Scrollable content area (top bar stays pinned above it) */}
+        <div className="flex-1 w-full overflow-y-auto px-5 pt-24 pb-28">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+              className="w-full"
+            >
+              {renderModule()}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {/* Global Quick Add Dialog */}
+        <QuickAddModal
+          isOpen={isQuickAddOpen}
+          onClose={() => setIsQuickAddOpen(false)}
+        />
+
+        {/* Global Search Dialog */}
+        <GlobalSearch
+          isOpen={isSearchOpen}
+          onClose={() => setIsSearchOpen(false)}
+        />
+
+        {/* Onboarding Tutorial */}
+        <Onboarding
+          isFirstTime={isFirstTime}
+          onComplete={() => setIsFirstTime(false)}
+        />
+      </div>
+    </div>
+  )
+}
+
