@@ -14,9 +14,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FinanceOS — Premium Personal Finance Operating System",
-  description: "A local-first, premium personal finance operating system for managing net worth, cash flow, assets, liabilities, and investments.",
+  title: "PennyFlow - Personal Finance Tracker",
+  description: "A local-first personal finance tracker for managing net worth, cash flow, assets, liabilities, and investments.",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/app-assets/favicon.png",
+    apple: "/app-assets/favicon.png",
+  },
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover' as const,
 };
 
 export default function RootLayout({

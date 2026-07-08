@@ -22,9 +22,9 @@ interface OnboardingStep {
 const onboardingSteps: OnboardingStep[] = [
   {
     id: 'welcome',
-    title: 'Welcome to FinanceOS',
-    description: 'Your personal financial operating system. Track money, understand patterns, and make better decisions.',
-    icon: <LayoutDashboard className="w-12 h-12" />,
+    title: 'Welcome to PennyFlow',
+    description: 'Your personal finance tracker. Track money, understand patterns, and make better decisions.',
+    icon: <img src="/app-assets/pennyflow-logo.png" alt="PennyFlow" className="w-16 h-16 rounded-2xl object-contain" />,
   },
   {
     id: 'add-transaction',

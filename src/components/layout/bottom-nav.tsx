@@ -1,11 +1,11 @@
 'use client'
 
 import React, { useState } from 'react'
-import { LayoutDashboard, Wallet, TrendingUp, Landmark, Settings, Plus, Heart, Calendar, BarChart3, Bell, Target, TrendingDown, Menu, X, Tag, CreditCard, Newspaper } from 'lucide-react'
+import { LayoutDashboard, Wallet, TrendingUp, Landmark, Settings, Plus, Heart, Calendar, BarChart3, Bell, Target, TrendingDown, Menu, X, Tag, CreditCard, Newspaper, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 
-export type TabType = 'dashboard' | 'insights' | 'ledger' | 'assets' | 'lending' | 'forecast' | 'bills' | 'budgets' | 'reports' | 'notifications' | 'goals' | 'investments' | 'accounts' | 'categories' | 'brief' | 'settings';
+export type TabType = 'dashboard' | 'analytics' | 'insights' | 'ledger' | 'assets' | 'lending' | 'forecast' | 'bills' | 'budgets' | 'reports' | 'notifications' | 'goals' | 'investments' | 'accounts' | 'categories' | 'brief' | 'settings' | 'about';
 
 interface BottomNavProps {
   activeTab: TabType;
@@ -15,6 +15,7 @@ interface BottomNavProps {
 
 const navItems: { id: TabType; label: string; icon: React.ElementType }[] = [
   { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'brief', label: 'Financial Brief', icon: Newspaper },
   { id: 'budgets', label: 'Budgets', icon: Wallet },
   { id: 'goals', label: 'Goals', icon: Target },
@@ -29,6 +30,7 @@ const navItems: { id: TabType; label: string; icon: React.ElementType }[] = [
   { id: 'lending', label: 'Lending', icon: Heart },
   { id: 'categories', label: 'Categories', icon: Tag },
   { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'about', label: 'About PennyFlow', icon: Info },
 ]
 
 export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNavProps) {
@@ -52,8 +54,13 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
         >
           <Menu className="h-5 w-5" />
         </button>
+        <img 
+          src="/app-assets/pennyflow-logo.png" 
+          alt="PennyFlow" 
+          className="w-7 h-7 rounded-lg object-contain"
+        />
         <span className="text-sm font-bold tracking-tight">
-          {activeItem?.label ?? 'FinanceOS'}
+          {activeItem?.label ?? 'PennyFlow'}
         </span>
       </div>
 
@@ -83,9 +90,16 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
           >
             {/* Sidebar header */}
             <div className="flex items-center justify-between px-5 py-5 border-b border-border/40">
-              <div>
-                <h2 className="text-base font-bold tracking-tight">FinanceOS</h2>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Personal Finance</p>
+              <div className="flex items-center space-x-3">
+                <img 
+                  src="/app-assets/pennyflow-logo.png" 
+                  alt="PennyFlow" 
+                  className="w-9 h-9 rounded-xl object-contain"
+                />
+                <div>
+                  <h2 className="text-base font-bold tracking-tight">PennyFlow</h2>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Personal Finance</p>
+                </div>
               </div>
               <button
                 onClick={() => setIsOpen(false)}

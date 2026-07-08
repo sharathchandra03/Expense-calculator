@@ -6,23 +6,32 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 const CURRENCY_SYMBOLS: { [key: string]: string } = {
-  USD: '$',
   INR: '₹',
+  USD: '$',
   EUR: '€',
   GBP: '£',
   JPY: '¥',
   CAD: 'CA$',
   AUD: 'A$',
+  AED: 'د.إ',
+  SGD: 'S$',
+  CHF: 'CHF',
+  CNY: '¥',
+  KRW: '₩',
+  BRL: 'R$',
+  ZAR: 'R',
+  MXN: 'MX$',
+  THB: '฿',
 }
 
 // Format currency helper
 export function formatCurrency(amount: number, currency?: string): string {
-  let activeCurrency = 'USD';
+  let activeCurrency = 'INR';
   if (typeof window !== 'undefined') {
-    activeCurrency = localStorage.getItem('finance-os-currency') || 'USD';
+    activeCurrency = localStorage.getItem('finance-os-currency') || 'INR';
   }
   const selectedCurrency = currency || activeCurrency;
-  const symbol = CURRENCY_SYMBOLS[selectedCurrency] || '$';
+  const symbol = CURRENCY_SYMBOLS[selectedCurrency] || '₹';
   const formatted = Math.abs(amount).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,

@@ -1,4 +1,4 @@
-# FinanceOS - Personal Finance Operating System
+# PennyFlow - Personal Finance Tracker
 
 A **mobile-first, local-first personal finance OS** built with Next.js, React, TypeScript, and Tailwind CSS.
 

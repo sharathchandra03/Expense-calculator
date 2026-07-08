@@ -6,6 +6,7 @@ import { db, Budget, generateUUID } from '@/db/schema'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { CategorySelect } from '@/components/ui/category-select'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { Plus, Edit2, Trash2, AlertCircle, TrendingUp, X, Check } from 'lucide-react'
@@ -206,10 +207,11 @@ export function BudgetManager() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-muted-foreground uppercase">Category</label>
-                <Input
-                  placeholder="Category"
+                <CategorySelect
+                  type="expense"
                   value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  onChange={(val) => setFormData({ ...formData, category: val })}
+                  placeholder="Select Category"
                   className="mt-2"
                 />
               </div>

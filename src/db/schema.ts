@@ -156,7 +156,7 @@ export interface FinancialBrief {
   generatedAt: string;
 }
 
-class FinanceOSDatabase extends Dexie {
+class PennyFlowDatabase extends Dexie {
   transactions!: Table<Transaction, string>;
   lending!: Table<Lending, string>;
   assets!: Table<Asset, string>;
@@ -172,7 +172,7 @@ class FinanceOSDatabase extends Dexie {
   financialBriefs!: Table<FinancialBrief, string>; // NEW
 
   constructor() {
-    super('FinanceOSDatabase');
+    super('PennyFlowDatabase');
     this.version(2).stores({
       transactions: 'id, date, type, category, accountId',
       lending: 'id, contactName, type, status, createdAt',
@@ -191,7 +191,7 @@ class FinanceOSDatabase extends Dexie {
   }
 }
 
-export const db = new FinanceOSDatabase();
+export const db = new PennyFlowDatabase();
 
 // Utility for safe UUID generation
 export function generateUUID(): string {
@@ -201,323 +201,23 @@ export function generateUUID(): string {
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
 
-// Helper to seed data if database is empty
+// Helper to initialize database (no seed data - fresh start for real user data)
 export async function seedDatabaseIfEmpty() {
   const accountCount = await db.accounts.count();
-  if (accountCount > 0) return; // Already seeded
+  if (accountCount > 0) return; // Already initialized
 
-  console.log('Seeding mock data for premium personal finance experience...');
-
-  // Setup Accounts
-  const chaseCheckingId = generateUUID();
-  const cashWalletId = generateUUID();
-  const vanguardId = generateUUID();
-  const bitcoinId = generateUUID();
-
-  const mockAccounts: Account[] = [
-    { id: chaseCheckingId, name: 'Chase Checking', type: 'bank', balance: 14750.80 },
-    { id: cashWalletId, name: 'Cash Wallet', type: 'cash', balance: 450.00 },
-    { id: vanguardId, name: 'Vanguard Brokerage', type: 'bank', balance: 45000.00 },
-    { id: bitcoinId, name: 'Bitcoin Wallet', type: 'bank', balance: 14148.00 },
-  ];
-
-  // Setup Assets
-  const mockAssets: Asset[] = [
-    {
-      id: generateUUID(),
-      name: 'Chase Checking',
-      type: 'bank',
-      balance: 14750.80,
-      valuationHistory: [
-        { date: '2026-04-01', value: 12100.00 },
-        { date: '2026-05-01', value: 13500.00 },
-        { date: '2026-06-01', value: 14750.80 }
-      ]
-    },
-    {
-      id: generateUUID(),
-      name: 'Cash Wallet',
-      type: 'cash',
-      balance: 450.00,
-      valuationHistory: [
-        { date: '2026-04-01', value: 400.00 },
-        { date: '2026-05-01', value: 420.00 },
-        { date: '2026-06-01', value: 450.00 }
-      ]
-    },
-    {
-      id: generateUUID(),
-      name: 'Vanguard Brokerage',
-      type: 'stock',
-      balance: 45000.00,
-      valuationHistory: [
-        { date: '2026-04-01', value: 41200.00 },
-        { date: '2026-05-01', value: 43100.00 },
-        { date: '2026-06-01', value: 45000.00 }
-      ]
-    },
-    {
-      id: generateUUID(),
-      name: 'Bitcoin Wallet',
-      type: 'crypto',
-      balance: 14148.00,
-      valuationHistory: [
-        { date: '2026-04-01', value: 11000.00 },
-        { date: '2026-05-01', value: 12500.00 },
-        { date: '2026-06-01', value: 14148.00 }
-      ]
-    },
-    {
-      id: generateUUID(),
-      name: 'Physical Gold Bar',
-      type: 'gold',
-      balance: 3200.00,
-      valuationHistory: [
-        { date: '2026-04-01', value: 3100.00 },
-        { date: '2026-05-01', value: 3150.00 },
-        { date: '2026-06-01', value: 3200.00 }
-      ]
-    }
-  ];
-
-  // Setup Transactions
-  const mockTransactions: Transaction[] = [
-    {
-      id: generateUUID(),
-      date: '2026-06-01',
-      type: 'income',
-      category: 'Salary',
-      amount: 4500.00,
-      accountId: chaseCheckingId,
-      description: 'Acme Corp Monthly Salary',
-      isRecurring: true,
-      recurrenceRule: 'monthly'
-    },
-    {
-      id: generateUUID(),
-      date: '2026-06-04',
-      type: 'expense',
-      category: 'Entertainment',
-      amount: 179.00,
-      accountId: chaseCheckingId,
-      description: 'Spotify Premium Duo Yearly',
-      isRecurring: true,
-      recurrenceRule: 'monthly'
-    },
-    {
-      id: generateUUID(),
-      date: '2026-06-04',
-      type: 'expense',
-      category: 'Shopping',
-      amount: 1248.00,
-      accountId: chaseCheckingId,
-      description: 'Amazon Prime Purchases',
-      isRecurring: false
-    },
-    {
-      id: generateUUID(),
-      date: '2026-06-10',
-      type: 'expense',
-      category: 'Food',
-      amount: 320.50,
-      accountId: chaseCheckingId,
-      description: 'Weekly Groceries Whole Foods',
-      isRecurring: false
-    },
-    {
-      id: generateUUID(),
-      date: '2026-06-12',
-      type: 'expense',
-      category: 'Utilities',
-      amount: 85.00,
-      accountId: chaseCheckingId,
-      description: 'Electricity Bill',
-      isRecurring: true,
-      recurrenceRule: 'monthly'
-    },
-    {
-      id: generateUUID(),
-      date: '2026-06-15',
-      type: 'income',
-      category: 'Investments',
-      amount: 320.00,
-      accountId: vanguardId,
-      description: 'Vanguard Dividend Payout',
-      isRecurring: false
-    },
-    {
-      id: generateUUID(),
-      date: '2026-06-20',
-      type: 'expense',
-      category: 'Food',
-      amount: 98.40,
-      accountId: cashWalletId,
-      description: 'Dinner with Friends',
-      isRecurring: false
-    },
-    {
-      id: generateUUID(),
-      date: '2026-06-25',
-      type: 'expense',
-      category: 'Transport',
-      amount: 45.00,
-      accountId: chaseCheckingId,
-      description: 'Fuel Fillup',
-      isRecurring: false
-    }
-  ];
-
-  // Setup Lending (contacts and interest tracking)
-  const mockLending: Lending[] = [
-    {
-      id: generateUUID(),
-      contactName: 'Sarah Chen',
-      type: 'lent',
-      amount: 5000.00,
-      interestRate: 8.0, // 8% simple interest per year
-      interestType: 'simple',
-      expectedRepaymentDate: '2026-12-01',
-      status: 'active',
-      createdAt: '2026-04-15',
-      description: 'Assisted with boutique business launch'
-    },
-    {
-      id: generateUUID(),
-      contactName: 'Alex Rivera',
-      type: 'lent',
-      amount: 1500.00,
-      interestRate: 0.0,
-      interestType: 'none',
-      expectedRepaymentDate: '2026-08-30',
-      status: 'active',
-      createdAt: '2026-05-20',
-      description: 'Interest-free personal help'
-    },
-    {
-      id: generateUUID(),
-      contactName: 'John Davis (Uncle)',
-      type: 'borrowed',
-      amount: 2500.00,
-      interestRate: 3.0,
-      interestType: 'simple',
-      expectedRepaymentDate: '2026-11-15',
-      status: 'active',
-      createdAt: '2026-06-01',
-      description: 'Family support loan'
-    }
-  ];
-
-  // Setup Bills due
-  const mockBills: Bill[] = [
-    {
-      id: generateUUID(),
-      title: 'Adobe Creative Suite',
-      amount: 30.00,
-      dueDate: '2026-07-08',
-      category: 'Work',
-      isPaid: false,
-      isRecurring: true,
-      recurrenceRule: 'monthly'
-    },
-    {
-      id: generateUUID(),
-      title: 'Apartment Rent',
-      amount: 1200.00,
-      dueDate: '2026-07-10',
-      category: 'Housing',
-      isPaid: false,
-      isRecurring: true,
-      recurrenceRule: 'monthly'
-    },
-    {
-      id: generateUUID(),
-      title: 'Fiber Internet',
-      amount: 65.00,
-      dueDate: '2026-07-15',
-      category: 'Utilities',
-      isPaid: false,
-      isRecurring: true,
-      recurrenceRule: 'monthly'
-    }
-  ];
-
-  // Setup Savings Goals
-  const mockGoals: Goal[] = [
-    {
-      id: generateUUID(),
-      title: 'Emergency Reserve Fund',
-      targetAmount: 15000.00,
-      currentAmount: 12000.00,
-      targetDate: '2026-12-31',
-      category: 'Safety'
-    },
-    {
-      id: generateUUID(),
-      title: 'New Carbon Road Bicycle',
-      targetAmount: 3500.00,
-      currentAmount: 700.00,
-      targetDate: '2026-10-01',
-      category: 'Leisure'
-    }
-  ];
-
-  // Setup System/Timeline Logs
-  const mockLogs: SystemLog[] = [
-    {
-      id: generateUUID(),
-      timestamp: new Date('2026-06-01T09:00:00Z').toISOString(),
-      type: 'system',
-      description: 'Welcome to FinanceOS. Local secure IndexedDB initialized.'
-    },
-    {
-      id: generateUUID(),
-      timestamp: new Date('2026-06-01T10:00:00Z').toISOString(),
-      type: 'transaction',
-      description: 'Received monthly salary from Acme Corp',
-      amount: 4500.00
-    },
-    {
-      id: generateUUID(),
-      timestamp: new Date('2026-06-04T15:30:00Z').toISOString(),
-      type: 'transaction',
-      description: 'Paid Spotify Premium subscription',
-      amount: -179.00
-    },
-    {
-      id: generateUUID(),
-      timestamp: new Date('2026-06-15T12:00:00Z').toISOString(),
-      type: 'transaction',
-      description: 'Vanguard Index Fund valuation updated'
-    },
-    {
-      id: generateUUID(),
-      timestamp: new Date('2026-06-20T19:30:00Z').toISOString(),
-      type: 'transaction',
-      description: 'Added dining expense',
-      amount: -98.40
-    }
-  ];
-
-  // Run initial write inside a transaction
-  await db.transaction('rw', [db.accounts, db.assets, db.transactions, db.lending, db.bills, db.goals, db.systemLogs], async () => {
-    await db.accounts.bulkAdd(mockAccounts);
-    await db.assets.bulkAdd(mockAssets);
-    await db.transactions.bulkAdd(mockTransactions);
-    await db.lending.bulkAdd(mockLending);
-    await db.bills.bulkAdd(mockBills);
-    await db.goals.bulkAdd(mockGoals);
-    await db.systemLogs.bulkAdd(mockLogs);
+  // Just log a welcome entry so the timeline isn't completely empty
+  await db.systemLogs.add({
+    id: generateUUID(),
+    timestamp: new Date().toISOString(),
+    type: 'system',
+    description: 'Welcome to PennyFlow. Your local database is ready.',
   });
-
-  console.log('Seeding finished successfully.');
 }
 
 // Synchronize Account Balance changes to Assets table
 export async function syncAccountToAsset(accountName: string, newBalance: number) {
-  let targetName = accountName;
-  if (accountName === 'Chase Bank Account') targetName = 'Chase Checking';
-  
-  const matchingAsset = await db.assets.where('name').equalsIgnoreCase(targetName).first();
+  const matchingAsset = await db.assets.where('name').equalsIgnoreCase(accountName).first();
   if (matchingAsset) {
     const todayStr = new Date().toISOString().split('T')[0];
     const updatedHistory = [...matchingAsset.valuationHistory];
@@ -538,10 +238,7 @@ export async function syncAccountToAsset(accountName: string, newBalance: number
 
 // Synchronize Asset Balance changes to Accounts table
 export async function syncAssetToAccount(assetName: string, newBalance: number) {
-  let targetName = assetName;
-  if (assetName === 'Chase Checking') targetName = 'Chase Bank Account';
-  
-  const matchingAccount = await db.accounts.where('name').equalsIgnoreCase(targetName).first();
+  const matchingAccount = await db.accounts.where('name').equalsIgnoreCase(assetName).first();
   if (matchingAccount) {
     await db.accounts.update(matchingAccount.id, {
       balance: newBalance

@@ -158,7 +158,7 @@ export function AccountManager() {
       {/* Total balance summary */}
       <div className="rounded-3xl bg-gradient-to-br from-primary/15 to-primary/5 border border-primary/20 p-5">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Balance</p>
-        <p className="text-3xl font-bold mt-1">{formatCurrency(totalBalance)}</p>
+        <p className="text-2xl sm:text-3xl font-bold mt-1 break-all">{formatCurrency(totalBalance)}</p>
         <p className="text-[11px] text-muted-foreground mt-1">{safeAccounts.length} account{safeAccounts.length !== 1 ? 's' : ''}</p>
       </div>
 
@@ -269,7 +269,7 @@ export function AccountManager() {
               >
                 <option value="">Select account</option>
                 {safeAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} — {formatCurrency(a.balance)}</option>
+                  <option key={a.id} value={a.id}>{a.name} - {formatCurrency(a.balance)}</option>
                 ))}
               </Select>
             </div>
@@ -283,7 +283,7 @@ export function AccountManager() {
               >
                 <option value="">Select account</option>
                 {safeAccounts.filter((a) => a.id !== transfer.from).map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} — {formatCurrency(a.balance)}</option>
+                  <option key={a.id} value={a.id}>{a.name} - {formatCurrency(a.balance)}</option>
                 ))}
               </Select>
             </div>

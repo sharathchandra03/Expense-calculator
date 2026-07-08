@@ -312,8 +312,11 @@ export class SearchService {
 }
 
 function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
+  const activeCurrency = typeof window !== 'undefined' 
+    ? (localStorage.getItem('finance-os-currency') || 'INR') 
+    : 'INR'
+  return new Intl.NumberFormat('en-IN', {
     style: 'currency',
-    currency: 'USD'
+    currency: activeCurrency
   }).format(amount)
 }

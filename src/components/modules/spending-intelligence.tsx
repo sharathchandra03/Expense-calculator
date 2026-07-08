@@ -182,7 +182,7 @@ export function SpendingIntelligence() {
         animate={{ opacity: 1, y: 0 }}
         className="sticky top-0 bg-background/80 backdrop-blur-md z-10 py-4 -mx-4 px-4"
       >
-        <h1 className="text-3xl font-bold text-foreground">Spending Intelligence</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Spending Intelligence</h1>
         <p className="text-xs text-muted-foreground mt-1">Analyze your financial patterns and trends</p>
       </motion.div>
 

@@ -78,6 +78,29 @@ export function AssetsTracker() {
     })
   }
 
+  // Check if an asset is linked to an account (pre-determined / system asset)
+  const isSystemAsset = (asset: Asset) => {
+    return accounts.some(acc => acc.name.toLowerCase() === asset.name.toLowerCase())
+  }
+
+  // Delete a user-added asset (non-system only)
+  const handleDeleteAsset = async (asset: Asset) => {
+    if (isSystemAsset(asset)) return
+    try {
+      await db.transaction('rw', [db.assets, db.systemLogs], async () => {
+        await db.assets.delete(asset.id)
+        await db.systemLogs.add({
+          id: generateUUID(),
+          timestamp: new Date().toISOString(),
+          type: 'asset',
+          description: `Removed asset "${asset.name}" (${formatCurrency(asset.balance)}) from portfolio.`,
+        })
+      })
+    } catch (err) {
+      console.error('Failed to delete asset:', err)
+    }
+  }
+
   // Update Asset Valuation
   const handleUpdateValuation = async (asset: Asset) => {
     if (!newValuation || isNaN(Number(newValuation))) return
@@ -322,17 +345,28 @@ export function AssetsTracker() {
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <p className="text-xs font-bold text-foreground">{formatCurrency(asset.balance)}</p>
-                      <button
-                        onClick={() => {
-                          setEditingAssetId(editingAssetId === asset.id ? null : asset.id)
-                          setNewValuation(asset.balance.toString())
-                        }}
-                        className="text-[10px] text-primary font-semibold hover:underline mt-0.5"
-                      >
-                        Adjust Value
-                      </button>
+                    <div className="flex items-center space-x-2">
+                      <div className="text-right">
+                        <p className="text-xs font-bold text-foreground">{formatCurrency(asset.balance)}</p>
+                        <button
+                          onClick={() => {
+                            setEditingAssetId(editingAssetId === asset.id ? null : asset.id)
+                            setNewValuation(asset.balance.toString())
+                          }}
+                          className="text-[10px] text-primary font-semibold hover:underline mt-0.5"
+                        >
+                          Adjust Value
+                        </button>
+                      </div>
+                      {!isSystemAsset(asset) && (
+                        <button
+                          onClick={() => handleDeleteAsset(asset)}
+                          className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
+                          title="Delete asset"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
 

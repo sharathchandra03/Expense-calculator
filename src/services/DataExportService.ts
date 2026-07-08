@@ -55,7 +55,7 @@ export class DataExportService {
   static generateBackupFilename(type: 'json' | 'csv'): string {
     const date = new Date().toISOString().split('T')[0]
     const time = new Date().toISOString().split('T')[1].split('.')[0].replace(/:/g, '-')
-    return `financeOS-backup-${date}-${time}.${type}`
+    return `pennyflow-backup-${date}-${time}.${type}`
   }
 
   /**

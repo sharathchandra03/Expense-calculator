@@ -1,7 +1,7 @@
 /**
  * HealthScoreService
  * 
- * Calculates comprehensive financial health metrics for FinanceOS.
+ * Calculates comprehensive financial health metrics for PennyFlow.
  * No UI dependencies. Pure business logic for financial analysis.
  */
 

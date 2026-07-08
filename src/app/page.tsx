@@ -22,6 +22,8 @@ import { InvestmentTracker } from '@/components/modules/investment-tracker'
 import { CustomCategories } from '@/components/modules/custom-categories'
 import { AccountManager } from '@/components/modules/account-manager'
 import { WeeklyBrief } from '@/components/modules/weekly-brief'
+import { Analytics } from '@/components/modules/analytics'
+import { AboutApp } from '@/components/modules/about-app'
 import { AnimatePresence, motion } from 'framer-motion'
 
 export default function Home() {
@@ -95,7 +97,7 @@ export default function Home() {
         <div className="flex flex-col items-center space-y-4">
           <div className="w-8 h-8 rounded-full border-4 border-t-primary border-r-transparent animate-spin" />
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-            FinanceOS Initializing...
+            PennyFlow Initializing...
           </p>
         </div>
       </div>
@@ -134,8 +136,12 @@ export default function Home() {
           return <CustomCategories key="categories" />
         case 'brief':
           return <WeeklyBrief key="brief" />
+        case 'analytics':
+          return <Analytics key="analytics" />
         case 'settings':
           return <Settings key="settings" />
+        case 'about':
+          return <AboutApp key="about" />
         default:
           return <Dashboard key="dashboard" onNavigateToTab={(tab) => setActiveTab(tab)} />
       }

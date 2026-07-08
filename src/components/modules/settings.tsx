@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import { db } from '@/db/schema'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { 
   User, Mail, Globe, Palette, Download, Upload, Settings as SettingsIcon,
   Bell, Lock, Trash2, LogOut, ArrowRight, Check, X, ChevronRight,
-  FileJson, Database, RotateCcw
+  FileJson, Database, RotateCcw, Camera, Image
 } from 'lucide-react'
 
 interface UserProfile {
@@ -19,18 +20,21 @@ interface UserProfile {
 
 export function Settings() {
   const [profile, setProfile] = useState<UserProfile>({ name: '', email: '' })
-  const [currency, setCurrency] = useState('USD')
+  const [currency, setCurrency] = useState('INR')
   const [theme, setTheme] = useState('dark')
   const [notifications, setNotifications] = useState(true)
   const [editing, setEditing] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [showAvatarOptions, setShowAvatarOptions] = useState(false)
+  const avatarInputRef = React.useRef<HTMLInputElement>(null)
+  const cameraInputRef = React.useRef<HTMLInputElement>(null)
 
   // Load user profile from localStorage
   useEffect(() => {
     const savedProfile = localStorage.getItem('finance-os-profile')
-    const savedCurrency = localStorage.getItem('finance-os-currency') || 'USD'
+    const savedCurrency = localStorage.getItem('finance-os-currency') || 'INR'
     const savedTheme = localStorage.getItem('finance-os-theme') || 'dark'
     const savedNotifications = localStorage.getItem('finance-os-notifications') !== 'false'
 
@@ -48,6 +52,30 @@ export function Settings() {
     setSaveSuccess(true)
     setTimeout(() => setSaveSuccess(false), 2000)
     setEditing(false)
+  }
+
+  // Handle avatar file selection (upload or capture)
+  const handleAvatarFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string
+      const updated = { ...profile, avatar: dataUrl }
+      setProfile(updated)
+      localStorage.setItem('finance-os-profile', JSON.stringify(updated))
+      setShowAvatarOptions(false)
+    }
+    reader.readAsDataURL(file)
+    event.target.value = '' // reset so same file can be re-selected
+  }
+
+  const handleRemoveAvatar = () => {
+    const updated = { ...profile, avatar: undefined }
+    setProfile(updated)
+    localStorage.setItem('finance-os-profile', JSON.stringify(updated))
+    setShowAvatarOptions(false)
   }
 
   // Save currency
@@ -87,7 +115,7 @@ export function Settings() {
       const url = URL.createObjectURL(dataBlob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `financeos-backup-${new Date().toISOString().split('T')[0]}.json`
+      link.download = `pennyflow-backup-${new Date().toISOString().split('T')[0]}.json`
       link.click()
       URL.revokeObjectURL(url)
     } catch (err) {
@@ -117,10 +145,30 @@ export function Settings() {
   }
 
   // Reset all data
-  const handleResetData = () => {
+  const handleResetData = async () => {
+    // Clear IndexedDB (all tables)
+    try {
+      await db.transactions.clear()
+      await db.accounts.clear()
+      await db.assets.clear()
+      await db.lending.clear()
+      await db.bills.clear()
+      await db.goals.clear()
+      await db.budgets.clear()
+      await db.investments.clear()
+      await db.customCategories.clear()
+      await db.tags.clear()
+      await db.notifications.clear()
+      await db.financialBriefs.clear()
+      await db.systemLogs.clear()
+    } catch (err) {
+      console.error('Error clearing database:', err)
+    }
+
+    // Clear localStorage
     localStorage.clear()
     setProfile({ name: '', email: '' })
-    setCurrency('USD')
+    setCurrency('INR')
     setTheme('dark')
     setNotifications(true)
     setShowResetConfirm(false)
@@ -138,8 +186,8 @@ export function Settings() {
         animate={{ opacity: 1, y: 0 }}
         className="py-1"
       >
-        <h1 className="text-3xl font-bold text-foreground">Settings</h1>
-        <p className="text-xs text-muted-foreground mt-1">Manage your FinanceOS preferences</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Settings</h1>
+        <p className="text-xs text-muted-foreground mt-1">Manage your PennyFlow preferences</p>
       </motion.div>
 
       {/* Success Message */}
@@ -162,9 +210,21 @@ export function Settings() {
         className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-2xl p-6 space-y-4"
       >
         <div className="flex items-center gap-3">
-          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
-            <User className="w-6 h-6 text-white" />
-          </div>
+          <button
+            onClick={() => setShowAvatarOptions(!showAvatarOptions)}
+            className="relative group"
+          >
+            {profile.avatar ? (
+              <img src={profile.avatar} alt="Avatar" className="w-14 h-14 rounded-full object-cover border-2 border-primary/30" />
+            ) : (
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
+                <User className="w-6 h-6 text-white" />
+              </div>
+            )}
+            <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-primary flex items-center justify-center border-2 border-background">
+              <Camera className="w-2.5 h-2.5 text-white" />
+            </div>
+          </button>
           <div className="flex-1">
             <h2 className="font-bold text-foreground">{profile.name || 'Add Your Name'}</h2>
             <p className="text-xs text-muted-foreground">{profile.email || 'Set up your profile'}</p>
@@ -176,6 +236,40 @@ export function Settings() {
             {editing ? 'Cancel' : 'Edit'}
           </button>
         </div>
+
+        {/* Avatar options */}
+        {showAvatarOptions && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="flex gap-2 pt-3 border-t border-primary/10"
+          >
+            <button
+              onClick={() => avatarInputRef.current?.click()}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-secondary/60 border border-border/50 text-xs font-semibold hover:bg-secondary transition-colors"
+            >
+              <Image className="w-4 h-4 text-primary" />
+              Upload Photo
+            </button>
+            <button
+              onClick={() => cameraInputRef.current?.click()}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-secondary/60 border border-border/50 text-xs font-semibold hover:bg-secondary transition-colors"
+            >
+              <Camera className="w-4 h-4 text-primary" />
+              Take Photo
+            </button>
+            {profile.avatar && (
+              <button
+                onClick={handleRemoveAvatar}
+                className="px-3 flex items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20 text-xs font-semibold text-red-500 hover:bg-red-500/20 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarFile} className="hidden" />
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="user" onChange={handleAvatarFile} className="hidden" />
+          </motion.div>
+        )}
 
         {editing ? (
           <motion.div
@@ -249,11 +343,23 @@ export function Settings() {
               <p className="text-xs text-muted-foreground">{currency}</p>
             </div>
           </div>
-          <Select value={currency} onChange={(e) => handleCurrencyChange(e.target.value)} className="w-24">
-            <option value="USD">USD ($)</option>
+          <Select value={currency} onChange={(e) => handleCurrencyChange(e.target.value)} className="w-28">
             <option value="INR">INR (₹)</option>
+            <option value="USD">USD ($)</option>
             <option value="EUR">EUR (€)</option>
             <option value="GBP">GBP (£)</option>
+            <option value="JPY">JPY (¥)</option>
+            <option value="AED">AED (د.إ)</option>
+            <option value="CAD">CAD (CA$)</option>
+            <option value="AUD">AUD (A$)</option>
+            <option value="SGD">SGD (S$)</option>
+            <option value="CHF">CHF</option>
+            <option value="CNY">CNY (¥)</option>
+            <option value="KRW">KRW (₩)</option>
+            <option value="BRL">BRL (R$)</option>
+            <option value="ZAR">ZAR (R)</option>
+            <option value="MXN">MXN (MX$)</option>
+            <option value="THB">THB (฿)</option>
           </Select>
         </div>
 

@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
+import { CategorySelect } from '@/components/ui/category-select'
 import { formatCurrency, cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
@@ -424,13 +425,13 @@ function ExpenseForm({ form, onSubmit, accounts }: any) {
 
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Category</label>
-        <Select {...form.register('category')}>
-          <option value="">Select Category</option>
-          {['Food', 'Transport', 'Shopping', 'Entertainment', 'Utilities', 'Other'].map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </Select>
-        {form.formState.errors.category && <p className="text-xs text-red-500 mt-1">{form.formState.errors.category.message}</p>}
+        <CategorySelect
+          type="expense"
+          value={form.watch('category') || ''}
+          onChange={(val) => form.setValue('category', val, { shouldValidate: true })}
+          placeholder="Select Category"
+          error={form.formState.errors.category?.message}
+        />
       </div>
 
       <div>
@@ -478,12 +479,12 @@ function IncomeForm({ form, onSubmit, accounts }: any) {
 
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Source</label>
-        <Select {...form.register('category')}>
-          <option value="">Select Source</option>
-          {['Salary', 'Freelance', 'Investment', 'Bonus', 'Gift', 'Other'].map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </Select>
+        <CategorySelect
+          type="income"
+          value={form.watch('category') || ''}
+          onChange={(val) => form.setValue('category', val, { shouldValidate: true })}
+          placeholder="Select Source"
+        />
       </div>
 
       <div>
@@ -611,13 +612,13 @@ function BillForm({ form, onSubmit }: any) {
 
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Category</label>
-        <Select {...form.register('category')}>
-          <option value="">Select Category</option>
-          {['Utilities', 'Subscription', 'Insurance', 'Rent', 'Healthcare', 'Transport', 'Other'].map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </Select>
-        {form.formState.errors.category && <p className="text-xs text-destructive mt-1">{form.formState.errors.category.message}</p>}
+        <CategorySelect
+          type="bill"
+          value={form.watch('category') || ''}
+          onChange={(val) => form.setValue('category', val, { shouldValidate: true })}
+          placeholder="Select Category"
+          error={form.formState.errors.category?.message}
+        />
       </div>
 
       <div>

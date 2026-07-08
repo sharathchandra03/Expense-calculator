@@ -1,6 +1,6 @@
-# About Project — FinanceOS (Personal Finance Operating System)
+# About Project - PennyFlow (Personal Finance Tracker)
 
-FinanceOS is a premium, local-first **Personal Finance Operating System** designed with absolute craft, premium visuals, and fluid micro-interactions. It operates entirely on the client-side with zero external cloud or database dependencies.
+PennyFlow is a premium, local-first **Personal Finance Tracker** designed with absolute craft, premium visuals, and fluid micro-interactions. It operates entirely on the client-side with zero external cloud or database dependencies.
 
 ---
 

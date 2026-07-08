@@ -6,6 +6,7 @@ import { db, Bill } from '@/db/schema'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { CategorySelect } from '@/components/ui/category-select'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { Plus, Edit2, Trash2, CheckCircle2, Calendar, Tag, AlertCircle, X, Check } from 'lucide-react'
@@ -261,14 +262,12 @@ export function BillsManager() {
 
             <div>
               <label className="text-xs font-semibold text-muted-foreground uppercase">Category</label>
-              <Select
+              <CategorySelect
+                type="bill"
                 value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              >
-                {['Utilities', 'Subscription', 'Insurance', 'Rent', 'Healthcare', 'Transport', 'Other'].map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </Select>
+                onChange={(val) => setFormData({ ...formData, category: val })}
+                placeholder="Select Category"
+              />
             </div>
 
             <div className="flex items-center gap-3 bg-card/50 p-3 rounded-2xl border border-border/50">
