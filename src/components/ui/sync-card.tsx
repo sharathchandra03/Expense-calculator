@@ -3,87 +3,39 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
 import { SyncService } from '@/services/SyncService'
-import { Cloud, LogOut, Check, RefreshCw, CloudOff } from 'lucide-react'
+import { Cloud, LogOut, Check } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { cn } from '@/lib/utils'
 
 export function SyncCard({ compact = false }: { compact?: boolean }) {
   const { user, loading, signInWithGoogle, signOut } = useAuth()
-  const [syncing, setSyncing] = useState(false)
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle')
-  const [lastSync, setLastSync] = useState<string | null>(null)
   const [visible, setVisible] = useState(true)
+  const [lastSync, setLastSync] = useState<string | null>(null)
 
   useEffect(() => {
     setLastSync(SyncService.getLastSync())
-  }, [syncing])
+    const interval = setInterval(() => setLastSync(SyncService.getLastSync()), 5000)
+    return () => clearInterval(interval)
+  }, [])
 
-  // Auto-hide on dashboard after 5 seconds (only in compact/dashboard mode)
+  // Auto-hide on dashboard after 5 seconds
   useEffect(() => {
-    if (!compact) return
-    if (loading) return
-    // Reset visibility when component mounts
+    if (!compact || loading) return
     setVisible(true)
-    const timer = setTimeout(() => {
-      setVisible(false)
-    }, 5000)
+    const timer = setTimeout(() => setVisible(false), 5000)
     return () => clearTimeout(timer)
   }, [compact, loading])
 
-  // Auto-sync on login
-  useEffect(() => {
-    if (user && !loading) {
-      // Only auto-push (don't pull and overwrite local data automatically)
-      handlePush()
-    }
-  }, [user, loading])
-
-  const handlePush = async () => {
-    if (!user || syncing) return
-    setSyncing(true)
-    try {
-      const result = await SyncService.pushToCloud(user.id)
-      setSyncStatus(result.success ? 'success' : 'error')
-    } catch {
-      setSyncStatus('error')
-    } finally {
-      setSyncing(false)
-      setLastSync(SyncService.getLastSync())
-    }
-  }
-
-  const handleSync = async () => {
-    if (!user || syncing) return
-    setSyncing(true)
-    setSyncStatus('idle')
-
-    try {
-      // Push local data to cloud (local is always the source of truth)
-      const pushResult = await SyncService.pushToCloud(user.id)
-      setSyncStatus(pushResult.success ? 'success' : 'error')
-    } catch {
-      setSyncStatus('error')
-    } finally {
-      setSyncing(false)
-      setLastSync(SyncService.getLastSync())
-    }
-  }
-
   const handleSignOut = async () => {
-    // Push before signing out
-    if (user) {
-      await SyncService.pushToCloud(user.id)
-    }
+    if (user) await SyncService.pushToCloud(user.id)
     await signOut()
   }
 
   if (loading) return null
 
-  // DASHBOARD (compact mode): Only show sign-in prompt if NOT logged in, auto-hide after 5s
-  // If already logged in, don't show anything on dashboard
+  // Dashboard: if logged in, don't show
   if (compact && user) return null
 
-  // Logged in state (only shows in Settings)
+  // Logged in (Settings only)
   if (user) {
     const formattedSync = lastSync
       ? new Date(lastSync).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -102,28 +54,16 @@ export function SyncCard({ compact = false }: { compact?: boolean }) {
             )}
             <div>
               <p className="text-xs font-semibold text-foreground">{user.user_metadata?.full_name || user.email}</p>
-              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                {syncing ? 'Syncing...' : syncStatus === 'error' ? 'Sync failed' : 'Synced & backed up'}
-              </p>
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Auto-synced across devices</p>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleSync}
-              disabled={syncing}
-              className="p-2 rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-              title="Sync now"
-            >
-              <RefreshCw className={cn("w-4 h-4", syncing && "animate-spin")} />
-            </button>
-            <button
-              onClick={handleSignOut}
-              className="p-2 rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
-              title="Sign out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            onClick={handleSignOut}
+            className="p-2 rounded-lg hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
+            title="Sign out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
         {formattedSync && (
           <p className="text-[10px] text-muted-foreground">Last synced: {formattedSync}</p>
@@ -132,7 +72,7 @@ export function SyncCard({ compact = false }: { compact?: boolean }) {
     )
   }
 
-  // Not logged in - show sign-in prompt (auto-hides on dashboard after 5s)
+  // Not logged in - prompt
   return (
     <AnimatePresence>
       {(!compact || visible) && (
