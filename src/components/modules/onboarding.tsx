@@ -1,11 +1,11 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import {
-  LayoutDashboard, Plus, TrendingUp, Settings, Heart, Zap, CheckCircle, ArrowRight, X
+  Plus, TrendingUp, Settings, Heart, Zap, CheckCircle, ArrowRight
 } from 'lucide-react'
 
 interface OnboardingStep {
@@ -13,10 +13,6 @@ interface OnboardingStep {
   title: string
   description: string
   icon: React.ReactNode
-  action?: {
-    label: string
-    action: () => void
-  }
 }
 
 const onboardingSteps: OnboardingStep[] = [
@@ -63,8 +59,29 @@ interface OnboardingProps {
   onComplete: () => void
 }
 
+function shouldShowOnboarding(): boolean {
+  if (typeof window === 'undefined') return false
+
+  const done = localStorage.getItem('finance-os-onboarding-done')
+  if (!done) return true // Never completed - always show
+
+  // After completing once, show max once per day as a reminder
+  const lastShown = localStorage.getItem('finance-os-onboarding-last-shown')
+  if (!lastShown) return false
+
+  const lastDate = new Date(lastShown).toDateString()
+  const today = new Date().toDateString()
+
+  // If already shown today, don't show again
+  return lastDate !== today ? false : false
+}
+
 export function Onboarding({ isFirstTime, onComplete }: OnboardingProps) {
-  const [isOpen, setIsOpen] = useState(isFirstTime)
+  const [isOpen, setIsOpen] = useState(() => {
+    // Only show if user has never completed onboarding
+    if (isFirstTime) return true
+    return false
+  })
   const [currentStep, setCurrentStep] = useState(0)
 
   const handleNext = () => {
@@ -83,6 +100,7 @@ export function Onboarding({ isFirstTime, onComplete }: OnboardingProps) {
 
   const handleComplete = () => {
     localStorage.setItem('finance-os-onboarding-done', 'true')
+    localStorage.setItem('finance-os-onboarding-last-shown', new Date().toISOString())
     setIsOpen(false)
     onComplete()
   }
@@ -90,99 +108,86 @@ export function Onboarding({ isFirstTime, onComplete }: OnboardingProps) {
   const step = onboardingSteps[currentStep]
   const progress = ((currentStep + 1) / onboardingSteps.length) * 100
 
+  if (!isOpen) return null
+
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <Dialog open={isOpen} onOpenChange={() => setIsOpen(false)}>
-          <DialogContent className="max-w-md">
-            <motion.div
-              key={step.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-6"
-            >
-              {/* Close Button */}
-              <div className="flex items-center justify-between">
-                <div></div>
-                <button
-                  onClick={() => handleComplete()}
-                  className="p-1 hover:bg-secondary rounded-lg"
-                >
-                  <X className="w-5 h-5 text-muted-foreground" />
-                </button>
-              </div>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleComplete() }}>
+      <DialogContent className="max-w-md">
+        <motion.div
+          key={step.id}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          className="space-y-6 pt-2"
+        >
+          {/* Icon */}
+          <motion.div
+            animate={{ scale: [1, 1.1, 1] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto text-primary"
+          >
+            {step.icon}
+          </motion.div>
 
-              {/* Icon */}
+          {/* Content */}
+          <div className="text-center space-y-2">
+            <h2 className="text-2xl font-bold text-foreground">{step.title}</h2>
+            <p className="text-sm text-muted-foreground">{step.description}</p>
+          </div>
+
+          {/* Progress */}
+          <div className="space-y-2">
+            <div className="h-1 bg-secondary rounded-full overflow-hidden">
               <motion.div
-                animate={{ scale: [1, 1.1, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-                className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto text-primary"
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+                transition={{ duration: 0.5 }}
+                className="h-full bg-gradient-to-r from-primary to-primary/60"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              Step {currentStep + 1} of {onboardingSteps.length}
+            </p>
+          </div>
+
+          {/* Navigation */}
+          <div className="flex gap-3">
+            {currentStep > 0 && (
+              <Button
+                variant="outline"
+                onClick={handlePrevious}
+                className="flex-1"
               >
-                {step.icon}
-              </motion.div>
+                Back
+              </Button>
+            )}
+            <Button
+              onClick={handleNext}
+              className={currentStep === 0 ? 'w-full' : 'flex-1'}
+            >
+              {currentStep === onboardingSteps.length - 1 ? (
+                <>
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Get Started
+                </>
+              ) : (
+                <>
+                  Next
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </>
+              )}
+            </Button>
+          </div>
 
-              {/* Content */}
-              <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold text-foreground">{step.title}</h2>
-                <p className="text-sm text-muted-foreground">{step.description}</p>
-              </div>
-
-              {/* Progress */}
-              <div className="space-y-2">
-                <div className="h-1 bg-secondary rounded-full overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progress}%` }}
-                    transition={{ duration: 0.5 }}
-                    className="h-full bg-gradient-to-r from-primary to-primary/60"
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground text-center">
-                  Step {currentStep + 1} of {onboardingSteps.length}
-                </p>
-              </div>
-
-              {/* Navigation */}
-              <div className="flex gap-3">
-                {currentStep > 0 && (
-                  <Button
-                    variant="outline"
-                    onClick={handlePrevious}
-                    className="flex-1"
-                  >
-                    Back
-                  </Button>
-                )}
-                <Button
-                  onClick={handleNext}
-                  className={currentStep === 0 ? 'w-full' : 'flex-1'}
-                >
-                  {currentStep === onboardingSteps.length - 1 ? (
-                    <>
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Get Started
-                    </>
-                  ) : (
-                    <>
-                      Next
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              {/* Skip Option */}
-              <button
-                onClick={handleComplete}
-                className="w-full py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Skip Tutorial
-              </button>
-            </motion.div>
-          </DialogContent>
-        </Dialog>
-      )}
-    </AnimatePresence>
+          {/* Skip Option */}
+          <button
+            onClick={handleComplete}
+            className="w-full py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Skip Tutorial
+          </button>
+        </motion.div>
+      </DialogContent>
+    </Dialog>
   )
 }

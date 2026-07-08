@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { CategorySelect } from '@/components/ui/category-select'
+import { AccountSelect } from '@/components/ui/account-select'
 import { formatCurrency, cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
@@ -436,13 +437,12 @@ function ExpenseForm({ form, onSubmit, accounts }: any) {
 
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Account</label>
-        <Select {...form.register('accountId')}>
-          <option value="">Select Account</option>
-          {accounts.map((acc: any) => (
-            <option key={acc.id} value={acc.id}>{acc.name}</option>
-          ))}
-        </Select>
-        {form.formState.errors.accountId && <p className="text-xs text-red-500 mt-1">{form.formState.errors.accountId.message}</p>}
+        <AccountSelect
+          value={form.watch('accountId') || ''}
+          onChange={(val) => form.setValue('accountId', val, { shouldValidate: true })}
+          placeholder="Select Account"
+          error={form.formState.errors.accountId?.message}
+        />
       </div>
 
       <div>
@@ -489,12 +489,11 @@ function IncomeForm({ form, onSubmit, accounts }: any) {
 
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">To Account</label>
-        <Select {...form.register('accountId')}>
-          <option value="">Select Account</option>
-          {accounts.map((acc: any) => (
-            <option key={acc.id} value={acc.id}>{acc.name}</option>
-          ))}
-        </Select>
+        <AccountSelect
+          value={form.watch('accountId') || ''}
+          onChange={(val) => form.setValue('accountId', val, { shouldValidate: true })}
+          placeholder="Select Account"
+        />
       </div>
 
       <div>

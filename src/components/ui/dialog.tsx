@@ -47,7 +47,7 @@ const DialogContent = React.forwardRef<
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ type: "spring", damping: 25, stiffness: 350 }}
             className={cn(
-              "relative z-50 grid w-full max-w-lg gap-5 border border-border/80 bg-card p-6 shadow-xl rounded-3xl md:max-w-md focus:outline-none overflow-hidden",
+              "relative z-50 grid w-full max-w-lg gap-5 border border-border/80 bg-card p-6 shadow-xl rounded-3xl md:max-w-md focus:outline-none",
               className
             )}
           >

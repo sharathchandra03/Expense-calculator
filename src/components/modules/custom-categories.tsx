@@ -8,18 +8,34 @@ import { Select } from '@/components/ui/select'
 import { Plus, Tag, Trash2, Edit2, X, ArrowDownRight, ArrowUpRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 const COLOR_OPTIONS = [
   '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
   '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
 ]
 
-const DEFAULT_EXPENSE = ['Food', 'Transport', 'Shopping', 'Entertainment', 'Utilities', 'Other']
-const DEFAULT_INCOME = ['Salary', 'Freelance', 'Investment', 'Bonus', 'Gift', 'Other']
+const ALL_DEFAULT_EXPENSE = ['Food', 'Transport', 'Shopping', 'Entertainment', 'Utilities', 'Rent', 'Healthcare', 'Education', 'Subscriptions', 'Other']
+const ALL_DEFAULT_INCOME = ['Salary', 'Freelance', 'Investment', 'Bonus', 'Gift', 'Rental Income', 'Interest', 'Other']
+
+function getHiddenDefaults(): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const stored = localStorage.getItem('pennyflow-hidden-categories')
+    if (stored) return JSON.parse(stored)
+  } catch {}
+  return []
+}
+
+function saveHiddenDefaults(hidden: string[]) {
+  localStorage.setItem('pennyflow-hidden-categories', JSON.stringify(hidden))
+}
 
 export function CustomCategories() {
   const [isAdding, setIsAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [hiddenDefaults, setHiddenDefaults] = useState<string[]>(getHiddenDefaults)
+  const [confirmState, setConfirmState] = useState<{ open: boolean; id?: string; name?: string; isDefault?: boolean }>({ open: false })
   const [formData, setFormData] = useState<{
     name: string
     type: 'income' | 'expense'
@@ -31,6 +47,10 @@ export function CustomCategories() {
 
   const safeCategories = Array.isArray(categories) ? categories : []
   const safeTransactions = Array.isArray(transactions) ? transactions : []
+
+  // Visible defaults (filtered by hidden)
+  const visibleExpenseDefaults = ALL_DEFAULT_EXPENSE.filter(c => !hiddenDefaults.includes(c))
+  const visibleIncomeDefaults = ALL_DEFAULT_INCOME.filter(c => !hiddenDefaults.includes(c))
 
   // Usage count per category name
   const usageCount = React.useMemo(() => {
@@ -54,7 +74,6 @@ export function CustomCategories() {
     const name = formData.name.trim()
     if (!name) return
 
-    // Prevent duplicates (same name + type)
     const duplicate = safeCategories.find(
       (c) => c.name.toLowerCase() === name.toLowerCase() && c.type === formData.type && c.id !== editingId
     )
@@ -91,10 +110,34 @@ export function CustomCategories() {
     setIsAdding(true)
   }
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Delete this category? Existing transactions keep their label.')) {
-      await db.customCategories.delete(id)
+  const handleDelete = async (id: string, name: string) => {
+    setConfirmState({ open: true, id, name, isDefault: false })
+  }
+
+  const handleConfirmDelete = async () => {
+    if (confirmState.id) {
+      await db.customCategories.delete(confirmState.id)
     }
+    setConfirmState({ open: false })
+  }
+
+  const handleHideDefault = (name: string) => {
+    setConfirmState({ open: true, name, isDefault: true })
+  }
+
+  const handleConfirmHideDefault = () => {
+    if (confirmState.name) {
+      const updated = [...hiddenDefaults, confirmState.name]
+      setHiddenDefaults(updated)
+      saveHiddenDefaults(updated)
+    }
+    setConfirmState({ open: false })
+  }
+
+  const handleRestoreDefault = (name: string) => {
+    const updated = hiddenDefaults.filter(h => h !== name)
+    setHiddenDefaults(updated)
+    saveHiddenDefaults(updated)
   }
 
   const renderCategoryList = (list: CustomCategory[], type: 'income' | 'expense') => (
@@ -131,7 +174,7 @@ export function CustomCategories() {
                 <Edit2 className="w-4 h-4 text-muted-foreground" />
               </button>
               <button
-                onClick={() => handleDelete(cat.id)}
+                onClick={() => handleDelete(cat.id, cat.name)}
                 className="p-2 hover:bg-destructive/10 rounded-lg transition-colors"
               >
                 <Trash2 className="w-4 h-4 text-muted-foreground" />
@@ -140,19 +183,38 @@ export function CustomCategories() {
           </motion.div>
         ))}
       </AnimatePresence>
-      {list.length === 0 && (
-        <p className="text-xs text-muted-foreground/70 px-1 py-2">
-          No custom {type} categories yet. Defaults are always available.
-        </p>
+    </div>
+  )
+
+  const renderDefaultPills = (defaults: string[], type: 'expense' | 'income') => (
+    <div className="flex flex-wrap gap-1.5 mb-2">
+      {defaults.map((c) => (
+        <span key={c} className="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full bg-secondary/60 text-muted-foreground group">
+          {c}
+          <button
+            onClick={() => handleHideDefault(c)}
+            className="ml-0.5 opacity-40 hover:opacity-100 hover:text-destructive transition-opacity"
+            title={`Remove ${c}`}
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </span>
+      ))}
+      {defaults.length === 0 && (
+        <p className="text-[10px] text-muted-foreground/50">All defaults removed.</p>
       )}
     </div>
   )
 
+  // Hidden defaults that can be restored
+  const hiddenExpense = ALL_DEFAULT_EXPENSE.filter(c => hiddenDefaults.includes(c))
+  const hiddenIncome = ALL_DEFAULT_INCOME.filter(c => hiddenDefaults.includes(c))
+
   return (
-    <div className="flex flex-col space-y-5">
+    <div className="flex flex-col space-y-5 pb-28">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Categories</h1>
-        <p className="text-xs text-muted-foreground">Create custom categories for smarter tracking.</p>
+        <p className="text-xs text-muted-foreground">Manage expense and income categories. Tap X to remove defaults.</p>
       </div>
 
       {/* Add / Edit form */}
@@ -227,13 +289,7 @@ export function CustomCategories() {
           <ArrowDownRight className="w-4 h-4 text-red-500" />
           <h3 className="text-sm font-bold">Expense Categories</h3>
         </div>
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {DEFAULT_EXPENSE.map((c) => (
-            <span key={c} className="text-[10px] px-2.5 py-1 rounded-full bg-secondary/60 text-muted-foreground">
-              {c}
-            </span>
-          ))}
-        </div>
+        {renderDefaultPills(visibleExpenseDefaults, 'expense')}
         {renderCategoryList(expenseCategories, 'expense')}
       </div>
 
@@ -243,15 +299,27 @@ export function CustomCategories() {
           <ArrowUpRight className="w-4 h-4 text-emerald-500" />
           <h3 className="text-sm font-bold">Income Categories</h3>
         </div>
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {DEFAULT_INCOME.map((c) => (
-            <span key={c} className="text-[10px] px-2.5 py-1 rounded-full bg-secondary/60 text-muted-foreground">
-              {c}
-            </span>
-          ))}
-        </div>
+        {renderDefaultPills(visibleIncomeDefaults, 'income')}
         {renderCategoryList(incomeCategories, 'income')}
       </div>
+
+      {/* Restore hidden defaults */}
+      {(hiddenExpense.length > 0 || hiddenIncome.length > 0) && (
+        <div className="space-y-2 pt-2 border-t border-border/40">
+          <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Removed defaults (tap to restore)</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {[...hiddenExpense, ...hiddenIncome].map((c) => (
+              <button
+                key={c}
+                onClick={() => handleRestoreDefault(c)}
+                className="text-[10px] px-2.5 py-1 rounded-full bg-secondary/30 text-muted-foreground/60 hover:bg-secondary/60 hover:text-foreground transition-colors line-through"
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!isAdding && (
         <button
@@ -262,6 +330,20 @@ export function CustomCategories() {
           Add Category
         </button>
       )}
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={confirmState.open}
+        title={confirmState.isDefault ? 'Remove category?' : 'Delete category?'}
+        message={confirmState.isDefault
+          ? `"${confirmState.name}" will be removed from defaults. You can restore it later.`
+          : `"${confirmState.name}" will be deleted. Existing transactions keep their label.`
+        }
+        confirmLabel={confirmState.isDefault ? 'Remove' : 'Delete'}
+        variant={confirmState.isDefault ? 'warning' : 'danger'}
+        onConfirm={confirmState.isDefault ? handleConfirmHideDefault : handleConfirmDelete}
+        onCancel={() => setConfirmState({ open: false })}
+      />
     </div>
   )
 }

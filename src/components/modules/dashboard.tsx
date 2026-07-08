@@ -8,6 +8,7 @@ import { formatCurrency, cn } from '@/lib/utils'
 import { ArrowUpRight, ArrowDownRight, Sparkles, Target, Calendar, ArrowRight, ShieldCheck, AlertCircle, ShoppingBag, Plus, Zap, TrendingUp, DollarSign, Heart, Clock, GripVertical } from 'lucide-react'
 import { motion, Reorder, useDragControls } from 'framer-motion'
 import { HealthScoreService, HealthScoreBreakdown } from '@/services/HealthScoreService'
+import { SyncCard } from '@/components/ui/sync-card'
 
 interface DashboardProps {
   onNavigateToTab: (tab: 'ledger' | 'assets' | 'forecast' | 'settings') => void;
@@ -127,6 +128,9 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
     <div className="flex flex-col space-y-4 pb-28">
       {/* Background Mesh Orbs */}
       <div className="absolute top-0 left-0 right-0 h-64 -z-10 bg-radial from-primary/10 via-transparent to-transparent opacity-60 dark:opacity-40 blur-3xl pointer-events-none" />
+
+      {/* Sync prompt */}
+      <SyncCard compact />
 
       <Reorder.Group axis="y" values={dashOrder} onReorder={handleDashReorder} className="space-y-4">
         {dashOrder.map((cardId) => {

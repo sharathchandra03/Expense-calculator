@@ -6,6 +6,7 @@ import { db } from '@/db/schema'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { SyncCard } from '@/components/ui/sync-card'
 import { 
   User, Mail, Globe, Palette, Download, Upload, Settings as SettingsIcon,
   Bell, Lock, Trash2, LogOut, ArrowRight, Check, X, ChevronRight,
@@ -321,6 +322,16 @@ export function Settings() {
             <p className="text-sm font-bold text-foreground mt-1">{stat.value}</p>
           </div>
         ))}
+      </motion.div>
+
+      {/* Cloud Sync */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.25 }}
+      >
+        <h3 className="text-sm font-bold text-foreground uppercase opacity-60 mb-3">Cloud Sync</h3>
+        <SyncCard />
       </motion.div>
 
       {/* Preferences Section */}
