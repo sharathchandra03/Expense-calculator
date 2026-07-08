@@ -33,9 +33,24 @@ export function SyncCard({ compact = false }: { compact?: boolean }) {
   // Auto-sync on login
   useEffect(() => {
     if (user && !loading) {
-      handleSync()
+      // Only auto-push (don't pull and overwrite local data automatically)
+      handlePush()
     }
   }, [user, loading])
+
+  const handlePush = async () => {
+    if (!user || syncing) return
+    setSyncing(true)
+    try {
+      const result = await SyncService.pushToCloud(user.id)
+      setSyncStatus(result.success ? 'success' : 'error')
+    } catch {
+      setSyncStatus('error')
+    } finally {
+      setSyncing(false)
+      setLastSync(SyncService.getLastSync())
+    }
+  }
 
   const handleSync = async () => {
     if (!user || syncing) return
@@ -43,20 +58,9 @@ export function SyncCard({ compact = false }: { compact?: boolean }) {
     setSyncStatus('idle')
 
     try {
-      // First pull from cloud (in case other device pushed updates)
-      const pullResult = await SyncService.pullFromCloud(user.id)
-
-      if (pullResult.isEmpty) {
-        // No cloud data yet, push local data up
-        const pushResult = await SyncService.pushToCloud(user.id)
-        setSyncStatus(pushResult.success ? 'success' : 'error')
-      } else if (pullResult.success) {
-        // After pulling, push local changes back (merge)
-        const pushResult = await SyncService.pushToCloud(user.id)
-        setSyncStatus(pushResult.success ? 'success' : 'error')
-      } else {
-        setSyncStatus('error')
-      }
+      // Push local data to cloud (local is always the source of truth)
+      const pushResult = await SyncService.pushToCloud(user.id)
+      setSyncStatus(pushResult.success ? 'success' : 'error')
     } catch {
       setSyncStatus('error')
     } finally {

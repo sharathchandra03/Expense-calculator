@@ -36,6 +36,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
   const goals = useLiveQuery(() => db.goals.toArray()) ?? []
   const bills = useLiveQuery(() => db.bills.toArray()) ?? []
   const investments = useLiveQuery(() => db.investments.toArray()) ?? []
+  const accounts = useLiveQuery(() => db.accounts.toArray()) ?? []
 
   // Ensure arrays are never undefined
   const safeTransactions = Array.isArray(transactions) ? transactions : []
@@ -45,6 +46,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
   const safeGoals = Array.isArray(goals) ? goals : []
   const safeBills = Array.isArray(bills) ? bills : []
   const safeInvestments = Array.isArray(investments) ? investments : []
+  const safeAccounts = Array.isArray(accounts) ? accounts : []
 
   // Total live value of tracked investments (stocks/crypto/funds)
   const investmentsValue = React.useMemo(
@@ -62,18 +64,28 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
     return HealthScoreService.calculateMetrics(safeAllTransactions, safeLending, safeAssets, safeBills)
   }, [safeAllTransactions, safeLending, safeAssets, safeBills])
 
-  // Net Worth (assets + lending net + tracked investments)
-  const netWorth = metrics.netWorth + investmentsValue
+  // Net Worth: use accounts as primary source (always updated by transactions)
+  // Fall back to assets if accounts empty, plus investments + lending
+  const accountsTotal = safeAccounts.reduce((sum, a) => sum + (a.balance || 0), 0)
+  const assetsTotal = safeAssets.reduce((sum, a) => sum + a.balance, 0)
+  const lentOut = safeLending.filter(l => l.type === 'lent' && l.status === 'active').reduce((s, l) => s + l.amount, 0)
+  const borrowed = safeLending.filter(l => l.type === 'borrowed' && l.status === 'active').reduce((s, l) => s + l.amount, 0)
+  const netWorth = Math.max(accountsTotal, assetsTotal) + investmentsValue + lentOut - borrowed
 
   // Spending trend
   const spendingTrend = React.useMemo(() => {
     return HealthScoreService.getMonthlySpendingTrend(safeAllTransactions)
   }, [safeAllTransactions])
 
-  // Cash analysis
-  const { liquidAssets, monthlyRecurring, monthlyExpenses } = metrics
-  // Invested assets include asset-table holdings + tracked investments portfolio
-  const investedAssets = metrics.investedAssets + investmentsValue
+  // Cash analysis - use accounts for liquid assets
+  const liquidAssets = safeAccounts
+    .filter(a => a.type === 'cash' || a.type === 'bank')
+    .reduce((sum, a) => sum + (a.balance || 0), 0)
+  const { monthlyRecurring, monthlyExpenses } = metrics
+  // Invested assets include investment accounts + tracked investments portfolio
+  const investedAssets = safeAccounts
+    .filter(a => a.type === 'investment' || a.type === 'crypto')
+    .reduce((sum, a) => sum + (a.balance || 0), 0) + investmentsValue
   const availableCash = HealthScoreService.getAvailableCash(liquidAssets, monthlyRecurring)
   const isLowCash = HealthScoreService.isLowCash(liquidAssets, monthlyExpenses)
   const cashStatus = liquidAssets > monthlyRecurring ? 'healthy' : liquidAssets > monthlyRecurring * 0.5 ? 'warning' : 'critical'
@@ -426,8 +438,8 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
         })}
       </Reorder.Group>
 
-      {/* Empty State */}
-      {safeTransactions.length === 0 && (
+      {/* Empty State - only show if truly nothing exists */}
+      {safeTransactions.length === 0 && safeAssets.length === 0 && safeBills.length === 0 && safeGoals.length === 0 && (
         <div className="flex flex-col items-center justify-center p-8 rounded-3xl bg-secondary/30 border border-dashed border-border/60 text-center">
           <AlertCircle className="h-8 w-8 text-muted-foreground/60 mb-3" />
           <p className="text-xs font-semibold text-muted-foreground">Start tracking your finances</p>

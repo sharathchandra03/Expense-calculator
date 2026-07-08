@@ -6,10 +6,11 @@ import { db } from '@/db/schema'
 import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { motion, Reorder, useDragControls } from 'framer-motion'
-import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
+import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, Area, AreaChart } from 'recharts'
 import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Wallet, Target, Heart, Landmark, PieChart, BarChart3, GripVertical } from 'lucide-react'
 
 type Period = 'daily' | 'monthly' | 'quarterly' | 'yearly'
+type ChartType = 'bar' | 'pie' | 'line'
 type AnalyticsCardId = 'summary' | 'barchart' | 'networth' | 'expenses' | 'income' | 'investments' | 'lending' | 'goals' | 'bills'
 
 const DEFAULT_ANALYTICS_ORDER: AnalyticsCardId[] = ['summary', 'barchart', 'networth', 'expenses', 'income', 'investments', 'lending', 'goals', 'bills']
@@ -43,6 +44,7 @@ function getPeriodRange(period: Period): { start: Date; end: Date; label: string
 
 export function Analytics() {
   const [period, setPeriod] = useState<Period>('monthly')
+  const [chartType, setChartType] = useState<ChartType>('bar')
   const [analyticsOrder, setAnalyticsOrder] = useState<AnalyticsCardId[]>(getAnalyticsStoredOrder)
 
   const handleAnalyticsReorder = (newOrder: AnalyticsCardId[]) => {
@@ -234,35 +236,80 @@ export function Analytics() {
         <p className="text-[10px] text-muted-foreground mt-1.5">{analysis.savingsRate}% savings rate</p>
       </div>
 
-      {/* Income vs Expense Bar Chart (last 6 months) */}
+      {/* Income vs Expense Chart (last 6 months) */}
       {monthlyBarData.some(m => m.income > 0 || m.expense > 0) && (
         <div className="rounded-3xl bg-card border border-border/50 p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-primary" />
-            <h3 className="text-sm font-bold">Income vs Expense (6 months)</h3>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-bold">Income vs Expense</h3>
+            </div>
+            {/* Chart type toggle */}
+            <div className="flex gap-0.5 p-0.5 rounded-lg bg-secondary/60">
+              {([
+                { key: 'bar', label: '|||' },
+                { key: 'line', label: '⟋' },
+                { key: 'pie', label: '◑' },
+              ] as { key: ChartType; label: string }[]).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setChartType(t.key)}
+                  className={cn(
+                    'px-2.5 py-1 rounded-md text-[10px] font-bold transition-all',
+                    chartType === t.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="h-44 w-full">
+
+          <div className="h-48 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyBarData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="month" fontSize={10} stroke="#888" tickLine={false} axisLine={false} />
-                <YAxis fontSize={9} stroke="#888" tickLine={false} axisLine={false} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v}`} />
-                <Tooltip
-                  contentStyle={{ background: 'rgba(15,15,17,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '11px', color: '#fff' }}
-                  formatter={(value: number, name: string) => [formatCurrency(value), name === 'income' ? 'Income' : 'Expense']}
-                />
-                <Bar dataKey="income" fill="#10b981" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="expense" fill="#ef4444" radius={[4, 4, 0, 0]} />
-              </BarChart>
+              {chartType === 'bar' ? (
+                <BarChart data={monthlyBarData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="month" fontSize={10} stroke="#888" tickLine={false} axisLine={false} />
+                  <YAxis fontSize={9} stroke="#888" tickLine={false} axisLine={false} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v}`} />
+                  <Tooltip contentStyle={{ background: 'rgba(15,15,17,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '11px', color: '#fff' }} formatter={(value: number, name: string) => [formatCurrency(value), name === 'income' ? 'Income' : 'Expense']} />
+                  <Bar dataKey="income" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="expense" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              ) : chartType === 'line' ? (
+                <AreaChart data={monthlyBarData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="month" fontSize={10} stroke="#888" tickLine={false} axisLine={false} />
+                  <YAxis fontSize={9} stroke="#888" tickLine={false} axisLine={false} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v}`} />
+                  <Tooltip contentStyle={{ background: 'rgba(15,15,17,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '11px', color: '#fff' }} formatter={(value: number, name: string) => [formatCurrency(value), name === 'income' ? 'Income' : 'Expense']} />
+                  <Area type="monotone" dataKey="income" stroke="#10b981" fill="#10b981" fillOpacity={0.15} strokeWidth={2} />
+                  <Area type="monotone" dataKey="expense" stroke="#ef4444" fill="#ef4444" fillOpacity={0.15} strokeWidth={2} />
+                </AreaChart>
+              ) : (
+                <RechartsPie>
+                  <Pie
+                    data={[
+                      { name: 'Income', value: monthlyBarData.reduce((s, m) => s + m.income, 0) },
+                      { name: 'Expense', value: monthlyBarData.reduce((s, m) => s + m.expense, 0) },
+                    ].filter(d => d.value > 0)}
+                    cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={4} dataKey="value" animationDuration={600}
+                  >
+                    <Cell fill="#10b981" />
+                    <Cell fill="#ef4444" />
+                  </Pie>
+                  <Tooltip contentStyle={{ background: 'rgba(15,15,17,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '11px', color: '#fff' }} formatter={(value: number) => [formatCurrency(value), '']} />
+                </RechartsPie>
+              )}
             </ResponsiveContainer>
           </div>
+
           <div className="flex items-center justify-center gap-5 text-[10px]">
             <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
               <span className="text-muted-foreground">Income</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm bg-red-500" />
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
               <span className="text-muted-foreground">Expense</span>
             </div>
           </div>

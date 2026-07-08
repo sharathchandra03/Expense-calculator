@@ -7,9 +7,10 @@ import { formatCurrency } from '@/lib/utils'
 import { TrendingUp, TrendingDown, PiggyBank, Sparkles, Calendar, ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight, PieChart, GripVertical } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
-import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
+import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 
 type ViewMode = 'overview' | 'calendar' | 'stats'
+type StatsChartType = 'pie' | 'bar'
 
 type CardId = 'insights' | 'spending' | 'bills' | 'goals'
 
@@ -31,6 +32,7 @@ export function WeeklyBrief() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [statsCategory, setStatsCategory] = useState<'expense' | 'income'>('expense')
+  const [statsChartType, setStatsChartType] = useState<StatsChartType>('pie')
   const [cardOrder, setCardOrder] = useState<CardId[]>(getStoredOrder)
 
   const handleReorder = (newOrder: CardId[]) => {
@@ -438,45 +440,65 @@ export function WeeklyBrief() {
             </button>
           </div>
 
-          {/* Pie Chart */}
+          {/* Chart */}
           {categoryData.length > 0 ? (
             <div className="rounded-3xl bg-card border border-border/50 p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <PieChart className="w-4 h-4 text-primary" />
-                <h3 className="text-sm font-bold">
-                  {statsCategory === 'expense' ? 'Expense' : 'Income'} Breakdown
-                </h3>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <PieChart className="w-4 h-4 text-primary" />
+                  <h3 className="text-sm font-bold">
+                    {statsCategory === 'expense' ? 'Expense' : 'Income'} Breakdown
+                  </h3>
+                </div>
+                {/* Chart type toggle */}
+                <div className="flex gap-0.5 p-0.5 rounded-lg bg-secondary/60">
+                  <button
+                    onClick={() => setStatsChartType('pie')}
+                    className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all', statsChartType === 'pie' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground')}
+                  >◑</button>
+                  <button
+                    onClick={() => setStatsChartType('bar')}
+                    className={cn('px-2.5 py-1 rounded-md text-[10px] font-bold transition-all', statsChartType === 'bar' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground')}
+                  >|||</button>
+                </div>
               </div>
 
               <div className="h-52 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <RechartsPie>
-                    <Pie
-                      data={categoryData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={45}
-                      outerRadius={80}
-                      paddingAngle={3}
-                      dataKey="value"
-                      animationBegin={0}
-                      animationDuration={600}
-                    >
-                      {categoryData.map((_, idx) => (
-                        <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        background: 'rgba(15, 15, 17, 0.9)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: '12px',
-                        fontSize: '11px',
-                        color: '#fff'
-                      }}
-                      formatter={(value: number) => [formatCurrency(value), '']}
-                    />
-                  </RechartsPie>
+                  {statsChartType === 'pie' ? (
+                    <RechartsPie>
+                      <Pie
+                        data={categoryData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={80}
+                        paddingAngle={3}
+                        dataKey="value"
+                        animationDuration={600}
+                      >
+                        {categoryData.map((_, idx) => (
+                          <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{ background: 'rgba(15,15,17,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '11px', color: '#fff' }}
+                        formatter={(value: number) => [formatCurrency(value), '']}
+                      />
+                    </RechartsPie>
+                  ) : (
+                    <BarChart data={categoryData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                      <XAxis dataKey="name" fontSize={9} stroke="#888" tickLine={false} axisLine={false} />
+                      <YAxis fontSize={9} stroke="#888" tickLine={false} axisLine={false} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v}`} />
+                      <Tooltip contentStyle={{ background: 'rgba(15,15,17,0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '11px', color: '#fff' }} formatter={(value: number) => [formatCurrency(value), '']} />
+                      <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                        {categoryData.map((_, idx) => (
+                          <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  )}
                 </ResponsiveContainer>
               </div>
 

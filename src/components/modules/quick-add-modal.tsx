@@ -24,7 +24,7 @@ const transactionSchema = z.object({
   amount: z.coerce.number().positive('Amount must be positive'),
   category: z.string().min(1, 'Category required'),
   accountId: z.string().min(1, 'Account required'),
-  description: z.string().min(1, 'Description required'),
+  description: z.string().optional().default(''),
   date: z.string().min(1, 'Date required'),
   isRecurring: z.boolean().default(false),
 })
