@@ -16,7 +16,7 @@ import { formatCurrency, cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   ArrowDownRight, ArrowUpRight, Heart, Home, Target, Zap, 
-  X, ChevronRight, Check, Sparkles, TrendingUp, Wallet
+  X, ChevronRight, Check, Sparkles, TrendingUp, Wallet, Camera
 } from 'lucide-react'
 
 // Validation schemas
@@ -94,12 +94,12 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
 
   const lendingForm = useForm<z.infer<typeof lendingSchema>>({
     resolver: zodResolver(lendingSchema),
-    defaultValues: { interestType: 'none', interestRate: 0 }
+    defaultValues: { interestType: 'none', interestRate: '' as any, amount: '' as any }
   })
 
   const assetForm = useForm<z.infer<typeof assetSchema>>({
     resolver: zodResolver(assetSchema),
-    defaultValues: { type: 'bank', balance: 0 }
+    defaultValues: { type: 'bank', balance: '' as any }
   })
 
   const billForm = useForm<z.infer<typeof billSchema>>({
@@ -129,7 +129,7 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
     onClose()
   }
 
-  const onExpenseSubmit = async (data: z.infer<typeof transactionSchema>) => {
+  const onExpenseSubmit = async (data: any) => {
     try {
       await db.transaction('rw', [db.transactions, db.accounts, db.assets, db.systemLogs], async () => {
         const txId = generateUUID()
@@ -143,6 +143,7 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
           description: data.description,
           isRecurring: data.isRecurring,
           recurrenceRule: undefined,
+          receiptImage: data.receiptImage || undefined,
         } as any)
 
         const account = await db.accounts.get(data.accountId)
@@ -374,6 +375,30 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
               </motion.div>
               <p className="text-lg font-bold text-foreground">Perfect!</p>
               <p className="text-xs text-muted-foreground text-center">Your {mode} has been recorded</p>
+              {(mode === 'expense' || mode === 'income') && (
+                <button
+                  onClick={async () => {
+                    const formData = mode === 'expense' ? expenseForm.getValues() : incomeForm.getValues()
+                    if (formData.amount && formData.category) {
+                      const account = accounts.find(a => a.id === formData.accountId)
+                      await db.templates.add({
+                        id: generateUUID(),
+                        name: formData.description || formData.category,
+                        amount: Number(formData.amount),
+                        category: formData.category,
+                        accountId: formData.accountId || '',
+                        type: mode,
+                        createdAt: new Date().toISOString(),
+                        usageCount: 0,
+                      })
+                    }
+                    handleClose()
+                  }}
+                  className="mt-2 px-4 py-2 rounded-xl bg-secondary text-xs font-semibold text-foreground hover:bg-secondary/80 transition-colors border border-border/50"
+                >
+                  Save as Template
+                </button>
+              )}
             </motion.div>
           ) : (
             <motion.div
@@ -410,8 +435,30 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
 
 // Form components
 function ExpenseForm({ form, onSubmit, accounts }: any) {
+  const [receiptPreview, setReceiptPreview] = React.useState<string | null>(null)
+
+  const handleReceiptAttach = async () => {
+    const { compressImageToBase64 } = await import('@/lib/receipt-utils')
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.capture = 'environment'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      try {
+        const base64 = await compressImageToBase64(file)
+        setReceiptPreview(base64)
+        form.setValue('receiptImage', base64)
+      } catch (err) {
+        console.error('Receipt compression failed:', err)
+      }
+    }
+    input.click()
+  }
+
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={form.handleSubmit((data: any) => onSubmit({ ...data, receiptImage: receiptPreview }))} className="space-y-4">
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Amount</label>
         <Input
@@ -454,6 +501,47 @@ function ExpenseForm({ form, onSubmit, accounts }: any) {
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Date</label>
         <Input type="date" {...form.register('date')} className="mt-1" />
+      </div>
+
+      {/* Receipt Attachment */}
+      <div>
+        <label className="text-xs font-semibold text-muted-foreground uppercase">Receipt</label>
+        <div className="mt-1.5">
+          {receiptPreview ? (
+            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-secondary/50 border border-border/50">
+              <img src={receiptPreview} alt="Receipt" className="w-12 h-12 rounded-lg object-cover border border-border/30 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-foreground truncate">Receipt attached</p>
+                <p className="text-[10px] text-muted-foreground">Tap to change or remove</p>
+              </div>
+              <div className="flex gap-1.5 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={handleReceiptAttach}
+                  className="px-2.5 py-1.5 rounded-lg bg-secondary border border-border/50 text-[10px] font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Change
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setReceiptPreview(null); form.setValue('receiptImage', undefined) }}
+                  className="px-2.5 py-1.5 rounded-lg bg-destructive/10 border border-destructive/20 text-[10px] font-semibold text-destructive hover:bg-destructive/20 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleReceiptAttach}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-secondary border border-border/50 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              Attach Receipt (up to 10MB)
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-2">
@@ -538,7 +626,10 @@ function LendingForm({ form, onSubmit }: any) {
 
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Interest Type</label>
-        <Select {...form.register('interestType')}>
+        <Select
+          value={form.watch('interestType')}
+          onChange={(e) => form.setValue('interestType', e.target.value, { shouldValidate: true })}
+        >
           <option value="none">None</option>
           <option value="simple">Simple</option>
           <option value="compound">Compound</option>
@@ -572,7 +663,10 @@ function AssetForm({ form, onSubmit }: any) {
 
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Type</label>
-        <Select {...form.register('type')}>
+        <Select
+          value={form.watch('type')}
+          onChange={(e) => form.setValue('type', e.target.value, { shouldValidate: true })}
+        >
           <option value="bank">Bank Account</option>
           <option value="cash">Cash</option>
           <option value="stock">Stock</option>

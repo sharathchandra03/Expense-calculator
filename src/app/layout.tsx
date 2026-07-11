@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { AutoSyncProvider } from "@/providers/AutoSyncProvider";
+import { UndoProvider } from "@/components/ui/undo-toast";
+import { AppLockProvider } from "@/providers/AppLockProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -47,7 +49,11 @@ export default function RootLayout({
         <ThemeProvider defaultTheme="dark" storageKey="finance-os-theme">
           <AuthProvider>
             <AutoSyncProvider>
-              {children}
+              <AppLockProvider>
+                <UndoProvider>
+                  {children}
+                </UndoProvider>
+              </AppLockProvider>
             </AutoSyncProvider>
           </AuthProvider>
         </ThemeProvider>

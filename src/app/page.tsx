@@ -24,6 +24,19 @@ import { AccountManager } from '@/components/modules/account-manager'
 import { WeeklyBrief } from '@/components/modules/weekly-brief'
 import { Analytics } from '@/components/modules/analytics'
 import { AboutApp } from '@/components/modules/about-app'
+import { SplitExpenses } from '@/components/modules/split-expenses'
+import { CurrencyConverter } from '@/components/modules/currency-converter'
+import { DebtPlanner } from '@/components/modules/debt-planner'
+import { BudgetVsActual } from '@/components/modules/budget-vs-actual'
+import { ReceiptGallery } from '@/components/modules/receipt-gallery'
+import { RecurringTransactionService } from '@/services/RecurringTransactionService'
+import { Achievements } from '@/components/modules/achievements'
+import { SubscriptionTracker } from '@/components/modules/subscriptions'
+import { SharedWallets } from '@/components/modules/shared-wallets'
+import { TaxHelper } from '@/components/modules/tax-helper'
+import { NetWorthTimeline } from '@/components/modules/networth-timeline'
+import { CSVImport } from '@/components/modules/csv-import'
+import { GraphicStatistics } from '@/components/modules/graphic-statistics'
 import { AnimatePresence, motion } from 'framer-motion'
 
 export default function Home() {
@@ -39,6 +52,13 @@ export default function Home() {
       try {
         await seedDatabaseIfEmpty()
         setDbReady(true)
+
+        // Phase 1.1: Process recurring transactions on app load
+        RecurringTransactionService.processRecurrences().then(count => {
+          if (count > 0) {
+            console.log(`[PennyFlow] Auto-logged ${count} recurring transaction(s)`)
+          }
+        }).catch(err => console.error('Recurring transaction check failed:', err))
       } catch (err) {
         console.error('Failed to initialize database:', err)
         setDbReady(true) // continue anyway
@@ -50,6 +70,15 @@ export default function Home() {
     const hasSeenOnboarding = localStorage.getItem('finance-os-onboarding-done')
     if (hasSeenOnboarding) {
       setIsFirstTime(false)
+    }
+
+    // Phase 13: Handle PWA shortcut URL params
+    const urlParams = new URLSearchParams(window.location.search)
+    const action = urlParams.get('action')
+    if (action === 'add-expense') {
+      setIsQuickAddOpen(true)
+    } else if (action === 'view-balance') {
+      setActiveTab('accounts')
     }
 
     // Register Service Worker for PWA in production only
@@ -142,6 +171,30 @@ export default function Home() {
           return <Settings key="settings" />
         case 'about':
           return <AboutApp key="about" />
+        case 'splits':
+          return <SplitExpenses key="splits" />
+        case 'converter':
+          return <CurrencyConverter key="converter" />
+        case 'debtplanner':
+          return <DebtPlanner key="debtplanner" />
+        case 'budgetactual':
+          return <BudgetVsActual key="budgetactual" />
+        case 'receipts':
+          return <ReceiptGallery key="receipts" />
+        case 'achievements':
+          return <Achievements key="achievements" />
+        case 'subscriptions':
+          return <SubscriptionTracker key="subscriptions" />
+        case 'sharedwallets':
+          return <SharedWallets key="sharedwallets" />
+        case 'taxhelper':
+          return <TaxHelper key="taxhelper" />
+        case 'networth':
+          return <NetWorthTimeline key="networth" />
+        case 'csvimport':
+          return <CSVImport key="csvimport" />
+        case 'statistics':
+          return <GraphicStatistics key="statistics" />
         default:
           return <Dashboard key="dashboard" onNavigateToTab={(tab) => setActiveTab(tab)} />
       }

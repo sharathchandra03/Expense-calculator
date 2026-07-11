@@ -14,5 +14,21 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Add Expense",
+      "short_name": "Add",
+      "description": "Quickly add a new expense",
+      "url": "/?action=add-expense",
+      "icons": [{ "src": "/app-assets/pennyflow-logo.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "View Balance",
+      "short_name": "Balance",
+      "description": "Check your account balance",
+      "url": "/?action=view-balance",
+      "icons": [{ "src": "/app-assets/pennyflow-logo.png", "sizes": "96x96" }]
+    }
   ]
 }

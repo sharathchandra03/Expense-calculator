@@ -12,6 +12,7 @@ import {
   Bell, Lock, Trash2, LogOut, ArrowRight, Check, X, ChevronRight,
   FileJson, Database, RotateCcw, Camera, Image
 } from 'lucide-react'
+import { useAppLock } from '@/providers/AppLockProvider'
 
 interface UserProfile {
   name: string
@@ -389,6 +390,7 @@ export function Settings() {
             <option value="light">Light</option>
             <option value="dark">Dark</option>
             <option value="system">System</option>
+            <option value="auto">Auto (Time)</option>
           </Select>
         </div>
 
@@ -413,6 +415,9 @@ export function Settings() {
             />
           </button>
         </div>
+
+        {/* App Lock (Phase 18) */}
+        <AppLockSettings />
       </motion.div>
 
       {/* Data Management Section */}
@@ -548,5 +553,75 @@ export function Settings() {
         </div>
       </motion.div>
     </div>
+  )
+}
+
+// Phase 18: App Lock Settings Component
+function AppLockSettings() {
+  const { isEnabled, enableLock, disableLock } = useAppLock()
+  const [showSetPin, setShowSetPin] = useState(false)
+  const [newPin, setNewPin] = useState('')
+
+  const handleEnable = () => {
+    if (newPin.length === 4 && /^\d{4}$/.test(newPin)) {
+      enableLock(newPin)
+      setNewPin('')
+      setShowSetPin(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="bg-secondary/30 border border-border rounded-xl p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-rose-500/20 flex items-center justify-center">
+            <Lock className="w-5 h-5 text-rose-500" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-foreground">App Lock</p>
+            <p className="text-xs text-muted-foreground">{isEnabled ? '4-digit PIN active' : 'Disabled'}</p>
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            if (isEnabled) { disableLock() }
+            else { setShowSetPin(!showSetPin) }
+          }}
+          className={`w-12 h-6 rounded-full transition-colors ${isEnabled ? 'bg-emerald-500' : 'bg-gray-400'}`}
+        >
+          <motion.div
+            animate={{ x: isEnabled ? 24 : 2 }}
+            className="w-5 h-5 bg-white rounded-full"
+          />
+        </button>
+      </div>
+
+      {showSetPin && !isEnabled && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          className="overflow-hidden"
+        >
+          <div className="flex gap-2 p-3 rounded-xl bg-secondary/30 border border-border">
+            <input
+              type="password"
+              maxLength={4}
+              inputMode="numeric"
+              value={newPin}
+              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              placeholder="4-digit PIN"
+              className="flex-1 h-9 px-3 rounded-lg bg-background border border-border/50 text-sm text-center font-mono tracking-[0.5em] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
+            />
+            <button
+              onClick={handleEnable}
+              disabled={newPin.length !== 4}
+              className="px-4 h-9 rounded-lg bg-primary text-primary-foreground text-xs font-bold disabled:opacity-40"
+            >
+              Set PIN
+            </button>
+          </div>
+        </motion.div>
+      )}
+    </>
   )
 }

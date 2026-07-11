@@ -365,8 +365,8 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
   const [data, setData] = useState({
     contactName: '',
     type: 'lent' as 'lent' | 'borrowed',
-    amount: 0,
-    interestRate: 0,
+    amount: '' as string | number,
+    interestRate: '' as string | number,
     interestType: 'none' as 'none' | 'simple' | 'compound',
     expectedRepaymentDate: '',
     description: '',
@@ -382,6 +382,8 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
       await db.lending.add({
         id: generateUUID(),
         ...data,
+        amount: parseFloat(String(data.amount)) || 0,
+        interestRate: parseFloat(String(data.interestRate)) || 0,
         status: 'active',
         createdAt: new Date().toISOString(),
       } as any)
@@ -418,7 +420,7 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
           type="number"
           placeholder="Amount"
           value={data.amount}
-          onChange={(e) => setData({ ...data, amount: parseFloat(e.target.value) || 0 })}
+          onChange={(e) => setData({ ...data, amount: e.target.value })}
           className="text-sm"
         />
       </div>
@@ -428,7 +430,7 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
           type="number"
           placeholder="Interest Rate %"
           value={data.interestRate}
-          onChange={(e) => setData({ ...data, interestRate: parseFloat(e.target.value) || 0 })}
+          onChange={(e) => setData({ ...data, interestRate: e.target.value })}
           className="text-sm"
         />
 

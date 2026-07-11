@@ -1,11 +1,12 @@
 'use client'
 
 import React, { useState } from 'react'
-import { LayoutDashboard, Wallet, TrendingUp, Landmark, Settings, Plus, Heart, Calendar, BarChart3, Bell, Target, TrendingDown, Menu, X, Tag, CreditCard, Newspaper, Info } from 'lucide-react'
+import { LayoutDashboard, Wallet, TrendingUp, Landmark, Settings, Plus, Heart, Calendar, BarChart3, Bell, Target, TrendingDown, Menu, X, Tag, CreditCard, Newspaper, Info, Users, Globe, Camera, Trophy, RefreshCw, Shield, IndianRupee, LineChart, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
+import { BudgetBar } from '@/components/ui/budget-bar'
 
-export type TabType = 'dashboard' | 'analytics' | 'insights' | 'ledger' | 'assets' | 'lending' | 'forecast' | 'bills' | 'budgets' | 'reports' | 'notifications' | 'goals' | 'investments' | 'accounts' | 'categories' | 'brief' | 'settings' | 'about';
+export type TabType = 'dashboard' | 'analytics' | 'insights' | 'ledger' | 'assets' | 'lending' | 'forecast' | 'bills' | 'budgets' | 'reports' | 'notifications' | 'goals' | 'investments' | 'accounts' | 'categories' | 'brief' | 'settings' | 'about' | 'splits' | 'converter' | 'debtplanner' | 'budgetactual' | 'receipts' | 'achievements' | 'subscriptions' | 'sharedwallets' | 'taxhelper' | 'networth' | 'csvimport' | 'statistics';
 
 interface BottomNavProps {
   activeTab: TabType;
@@ -15,6 +16,7 @@ interface BottomNavProps {
 
 const navItems: { id: TabType; label: string; icon: React.ElementType }[] = [
   { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+  { id: 'statistics', label: 'Statistics', icon: BarChart3 },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'brief', label: 'Financial Brief', icon: Newspaper },
   { id: 'budgets', label: 'Budgets', icon: Wallet },
@@ -29,6 +31,17 @@ const navItems: { id: TabType; label: string; icon: React.ElementType }[] = [
   { id: 'assets', label: 'Assets', icon: Landmark },
   { id: 'lending', label: 'Lending', icon: Heart },
   { id: 'categories', label: 'Categories', icon: Tag },
+  { id: 'splits', label: 'Split Expenses', icon: Users },
+  { id: 'receipts', label: 'Receipt Gallery', icon: Camera },
+  { id: 'converter', label: 'Currency Converter', icon: Globe },
+  { id: 'debtplanner', label: 'Debt Planner', icon: TrendingDown },
+  { id: 'budgetactual', label: 'Budget vs Actual', icon: BarChart3 },
+  { id: 'achievements', label: 'Achievements', icon: Trophy },
+  { id: 'subscriptions', label: 'Subscriptions', icon: RefreshCw },
+  { id: 'sharedwallets', label: 'Shared Wallets', icon: Users },
+  { id: 'taxhelper', label: 'Tax Helper', icon: IndianRupee },
+  { id: 'networth', label: 'Net Worth Timeline', icon: LineChart },
+  { id: 'csvimport', label: 'Import CSV', icon: Upload },
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'about', label: 'About PennyFlow', icon: Info },
 ]
@@ -46,22 +59,28 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
   return (
     <>
       {/* Top bar with menu toggle + current section label */}
-      <div className="absolute top-0 left-0 right-0 z-30 flex items-center gap-3 px-5 py-4 bg-background/80 backdrop-blur-xl border-b border-border/40">
-        <button
-          onClick={() => setIsOpen(true)}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary/60 text-foreground hover:bg-secondary transition-colors"
-          aria-label="Open menu"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-        <img 
-          src="/app-assets/pennyflow-logo.png" 
-          alt="PennyFlow" 
-          className="w-7 h-7 rounded-lg object-contain"
-        />
-        <span className="text-sm font-bold tracking-tight">
-          {activeItem?.label ?? 'PennyFlow'}
-        </span>
+      <div className="absolute top-0 left-0 right-0 z-30 bg-background/80 backdrop-blur-xl border-b border-border/40">
+        <div className="flex items-center gap-3 px-5 py-4">
+          <button
+            onClick={() => setIsOpen(true)}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary/60 text-foreground hover:bg-secondary transition-colors"
+            aria-label="Open menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <img 
+            src="/app-assets/pennyflow-logo.png" 
+            alt="PennyFlow" 
+            className="w-7 h-7 rounded-lg object-contain"
+          />
+          <span className="text-sm font-bold tracking-tight">
+            {activeItem?.label ?? 'PennyFlow'}
+          </span>
+        </div>
+        {/* Phase 0.5: Budget awareness bar - always visible */}
+        <div className="px-5 pb-2">
+          <BudgetBar />
+        </div>
       </div>
 
       {/* Backdrop overlay */}
