@@ -221,6 +221,16 @@ export interface SharedWallet {
   createdAt: string;
 }
 
+// Debt record for Debt Planner
+export interface DebtRecord {
+  id: string;
+  name: string;
+  balance: number;
+  interestRate: number;
+  minimumPayment: number;
+  createdAt: string;
+}
+
 class PennyFlowDatabase extends Dexie {
   transactions!: Table<Transaction, string>;
   lending!: Table<Lending, string>;
@@ -239,10 +249,11 @@ class PennyFlowDatabase extends Dexie {
   splits!: Table<SplitExpense, string>;
   subscriptions!: Table<Subscription, string>;
   sharedWallets!: Table<SharedWallet, string>;
+  debts!: Table<DebtRecord, string>;
 
   constructor() {
     super('PennyFlowDatabase');
-    this.version(5).stores({
+    this.version(6).stores({
       transactions: 'id, date, type, category, accountId',
       lending: 'id, contactName, type, status, createdAt',
       assets: 'id, name, type',
@@ -260,6 +271,7 @@ class PennyFlowDatabase extends Dexie {
       splits: 'id, transactionId, createdAt',
       subscriptions: 'id, name, cycle, isActive',
       sharedWallets: 'id, name, inviteCode',
+      debts: 'id, name, createdAt',
     });
   }
 }

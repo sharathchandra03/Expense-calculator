@@ -126,6 +126,13 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
   const handleClose = () => {
     setStep('select')
     setSubmitted(false)
+    // Reset all forms so old values don't persist
+    expenseForm.reset({ date: new Date().toISOString().split('T')[0], isRecurring: false, amount: '' as any, category: '', accountId: '', description: '' })
+    incomeForm.reset({ date: new Date().toISOString().split('T')[0], isRecurring: false, amount: '' as any, category: '', accountId: '', description: '' })
+    lendingForm.reset({ interestType: 'none', interestRate: '' as any, amount: '' as any, contactName: '', description: '', expectedRepaymentDate: '' })
+    assetForm.reset({ type: 'bank', balance: '' as any, name: '' })
+    billForm.reset({ dueDate: new Date().toISOString().split('T')[0], isRecurring: false, title: '', amount: '' as any, category: '' })
+    goalForm.reset({ targetAmount: 0, currentAmount: 0, title: '', targetDate: '', category: '' })
     onClose()
   }
 

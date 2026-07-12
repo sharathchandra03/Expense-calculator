@@ -1,12 +1,12 @@
 'use client'
 
-import React, { useState } from 'react'
-import { LayoutDashboard, Wallet, TrendingUp, Landmark, Settings, Plus, Heart, Calendar, BarChart3, Bell, Target, TrendingDown, Menu, X, Tag, CreditCard, Newspaper, Info, Users, Globe, Camera, Trophy, RefreshCw, Shield, IndianRupee, LineChart, Upload } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { LayoutDashboard, Wallet, TrendingUp, Landmark, Settings, Plus, Heart, Calendar, BarChart3, Bell, Target, TrendingDown, Menu, X, Tag, CreditCard, Newspaper, Info, Users, Globe, Camera, Trophy, RefreshCw, Shield, IndianRupee, LineChart, Upload, GripVertical } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, Reorder } from 'framer-motion'
 import { BudgetBar } from '@/components/ui/budget-bar'
 
-export type TabType = 'dashboard' | 'analytics' | 'insights' | 'ledger' | 'assets' | 'lending' | 'forecast' | 'bills' | 'budgets' | 'reports' | 'notifications' | 'goals' | 'investments' | 'accounts' | 'categories' | 'brief' | 'settings' | 'about' | 'splits' | 'converter' | 'debtplanner' | 'budgetactual' | 'receipts' | 'achievements' | 'subscriptions' | 'sharedwallets' | 'taxhelper' | 'networth' | 'csvimport' | 'statistics';
+export type TabType = 'dashboard' | 'analytics' | 'insights' | 'ledger' | 'assets' | 'lending' | 'forecast' | 'bills' | 'budgets' | 'reports' | 'notifications' | 'goals' | 'investments' | 'accounts' | 'categories' | 'brief' | 'settings' | 'about' | 'splits' | 'converter' | 'debtplanner' | 'budgetactual' | 'receipts' | 'achievements' | 'subscriptions' | 'sharedwallets' | 'taxhelper' | 'networth' | 'csvimport';
 
 interface BottomNavProps {
   activeTab: TabType;
@@ -14,9 +14,14 @@ interface BottomNavProps {
   onQuickAddClick: () => void;
 }
 
-const navItems: { id: TabType; label: string; icon: React.ElementType }[] = [
+interface NavItem {
+  id: TabType;
+  label: string;
+  icon: React.ElementType;
+}
+
+const DEFAULT_NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
-  { id: 'statistics', label: 'Statistics', icon: BarChart3 },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'brief', label: 'Financial Brief', icon: Newspaper },
   { id: 'budgets', label: 'Budgets', icon: Wallet },
@@ -46,12 +51,57 @@ const navItems: { id: TabType; label: string; icon: React.ElementType }[] = [
   { id: 'about', label: 'About PennyFlow', icon: Info },
 ]
 
+const NAV_ORDER_KEY = 'pennyflow-nav-order'
+
+function getStoredOrder(): TabType[] | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const stored = localStorage.getItem(NAV_ORDER_KEY)
+    if (stored) return JSON.parse(stored)
+  } catch {}
+  return null
+}
+
+function saveOrder(order: TabType[]) {
+  try {
+    localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(order))
+  } catch {}
+}
+
 export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNavProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [isReordering, setIsReordering] = useState(false)
+  const [navItems, setNavItems] = useState<NavItem[]>(DEFAULT_NAV_ITEMS)
+
+  // Load stored order on mount
+  useEffect(() => {
+    const storedOrder = getStoredOrder()
+    if (storedOrder) {
+      // Rebuild nav items based on stored order, filtering out any that don't exist
+      const ordered: NavItem[] = []
+      for (const id of storedOrder) {
+        const item = DEFAULT_NAV_ITEMS.find(i => i.id === id)
+        if (item) ordered.push(item)
+      }
+      // Add any new items not in stored order
+      for (const item of DEFAULT_NAV_ITEMS) {
+        if (!ordered.find(i => i.id === item.id)) {
+          ordered.push(item)
+        }
+      }
+      setNavItems(ordered)
+    }
+  }, [])
+
+  const handleReorder = (newItems: NavItem[]) => {
+    setNavItems(newItems)
+    saveOrder(newItems.map(i => i.id))
+  }
 
   const activeItem = navItems.find((item) => item.id === activeTab)
 
   const handleNavClick = (tab: TabType) => {
+    if (isReordering) return
     setActiveTab(tab)
     setIsOpen(false)
   }
@@ -77,7 +127,7 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
             {activeItem?.label ?? 'PennyFlow'}
           </span>
         </div>
-        {/* Phase 0.5: Budget awareness bar - always visible */}
+        {/* Budget awareness bar */}
         <div className="px-5 pb-2">
           <BudgetBar />
         </div>
@@ -129,28 +179,74 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
               </button>
             </div>
 
-            {/* Nav items */}
-            <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-              {navItems.map((item) => {
-                const Icon = item.icon
-                const isActive = activeTab === item.id
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleNavClick(item.id)}
-                    className={cn(
-                      'w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm transition-all',
-                      isActive
-                        ? 'bg-primary/10 text-primary font-semibold'
-                        : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
-                    )}
-                  >
-                    <Icon className="h-5 w-5 flex-shrink-0" />
-                    <span className="tracking-tight">{item.label}</span>
-                    {isActive && <span className="ml-auto h-2 w-2 rounded-full bg-primary" />}
-                  </button>
-                )
-              })}
+            {/* Reorder toggle */}
+            <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+              <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Navigation</span>
+              <button
+                onClick={() => setIsReordering(!isReordering)}
+                className={cn(
+                  "text-[10px] font-semibold px-2 py-1 rounded-lg transition-colors",
+                  isReordering ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {isReordering ? 'Done' : 'Reorder'}
+              </button>
+            </div>
+
+            {/* Nav items - draggable */}
+            <nav className="flex-1 overflow-y-auto px-3 py-2">
+              {isReordering ? (
+                <Reorder.Group
+                  axis="y"
+                  values={navItems}
+                  onReorder={handleReorder}
+                  className="space-y-1"
+                >
+                  {navItems.map((item) => {
+                    const Icon = item.icon
+                    const isActive = activeTab === item.id
+                    return (
+                      <Reorder.Item
+                        key={item.id}
+                        value={item}
+                        className={cn(
+                          'w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm transition-all cursor-grab active:cursor-grabbing',
+                          isActive
+                            ? 'bg-primary/10 text-primary font-semibold'
+                            : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                        )}
+                      >
+                        <GripVertical className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
+                        <Icon className="h-5 w-5 flex-shrink-0" />
+                        <span className="tracking-tight">{item.label}</span>
+                      </Reorder.Item>
+                    )
+                  })}
+                </Reorder.Group>
+              ) : (
+                <div className="space-y-1">
+                  {navItems.map((item) => {
+                    const Icon = item.icon
+                    const isActive = activeTab === item.id
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNavClick(item.id)}
+                        className={cn(
+                          'w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm transition-all',
+                          isActive
+                            ? 'bg-primary/10 text-primary font-semibold'
+                            : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                        )}
+                      >
+                        <Icon className="h-5 w-5 flex-shrink-0" />
+                        <span className="tracking-tight">{item.label}</span>
+                        {isActive && <span className="ml-auto h-2 w-2 rounded-full bg-primary" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </nav>
 
             {/* Quick add button */}

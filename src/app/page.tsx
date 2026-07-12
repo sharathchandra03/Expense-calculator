@@ -36,7 +36,6 @@ import { SharedWallets } from '@/components/modules/shared-wallets'
 import { TaxHelper } from '@/components/modules/tax-helper'
 import { NetWorthTimeline } from '@/components/modules/networth-timeline'
 import { CSVImport } from '@/components/modules/csv-import'
-import { GraphicStatistics } from '@/components/modules/graphic-statistics'
 import { AnimatePresence, motion } from 'framer-motion'
 
 export default function Home() {
@@ -45,6 +44,35 @@ export default function Home() {
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [isFirstTime, setIsFirstTime] = useState(true)
   const [dbReady, setDbReady] = useState(false)
+
+  // Browser history management for mobile back button
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab)
+    // Push a new history state so back button navigates within the app
+    if (tab !== 'dashboard') {
+      window.history.pushState({ tab }, '', `?tab=${tab}`)
+    }
+  }
+
+  // Handle browser back button (popstate)
+  useEffect(() => {
+    // Push initial state for dashboard
+    window.history.replaceState({ tab: 'dashboard' }, '', window.location.pathname)
+
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state?.tab) {
+        setActiveTab(event.state.tab)
+      } else {
+        // No state means we're at the root - go to dashboard
+        setActiveTab('dashboard')
+        // Push state again to prevent closing app on next back press
+        window.history.pushState({ tab: 'dashboard' }, '', window.location.pathname)
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   // Seed database on mount
   useEffect(() => {
@@ -79,6 +107,7 @@ export default function Home() {
       setIsQuickAddOpen(true)
     } else if (action === 'view-balance') {
       setActiveTab('accounts')
+      window.history.pushState({ tab: 'accounts' }, '', '?tab=accounts')
     }
 
     // Register Service Worker for PWA in production only
@@ -138,11 +167,11 @@ export default function Home() {
     try {
       switch (activeTab) {
         case 'dashboard':
-          return <Dashboard key="dashboard" onNavigateToTab={(tab) => setActiveTab(tab)} />
+          return <Dashboard key="dashboard" onNavigateToTab={(tab) => handleTabChange(tab)} />
         case 'insights':
           return <SpendingIntelligence key="insights" />
         case 'ledger':
-          return <TransactionsLedger key="ledger" />
+          return <TransactionsLedger key="ledger" onNavigateToTab={(tab) => handleTabChange(tab as any)} />
         case 'assets':
           return <AssetsTracker key="assets" />
         case 'lending':
@@ -193,10 +222,8 @@ export default function Home() {
           return <NetWorthTimeline key="networth" />
         case 'csvimport':
           return <CSVImport key="csvimport" />
-        case 'statistics':
-          return <GraphicStatistics key="statistics" />
         default:
-          return <Dashboard key="dashboard" onNavigateToTab={(tab) => setActiveTab(tab)} />
+          return <Dashboard key="dashboard" onNavigateToTab={(tab) => handleTabChange(tab)} />
       }
     } catch (error) {
       console.error('Error rendering module:', error)
@@ -204,7 +231,7 @@ export default function Home() {
         <div className="flex flex-col items-center justify-center py-12 space-y-4">
           <p className="text-sm text-muted-foreground">Error loading module</p>
           <button
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => handleTabChange('dashboard')}
             className="text-xs px-4 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
           >
             Return to Dashboard
@@ -222,7 +249,7 @@ export default function Home() {
         {/* Navigation: pinned top bar + slide-in sidebar + floating add button */}
         <BottomNav
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          setActiveTab={handleTabChange}
           onQuickAddClick={() => setIsQuickAddOpen(true)}
         />
 

@@ -370,7 +370,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
       {/* === QUICK STATS ROW === */}
       <div className="grid grid-cols-3 gap-2">
         <button
-          onClick={() => onNavigateToTab('statistics')}
+          onClick={() => onNavigateToTab('analytics')}
           className="p-3 rounded-xl bg-card border border-border/40 hover:border-primary/30 transition-all text-center"
         >
           <p className="text-sm font-bold text-foreground">
@@ -421,7 +421,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none">
         {[
           { label: 'Ledger', emoji: '📒', tab: 'ledger' },
-          { label: 'Statistics', emoji: '📊', tab: 'statistics' },
+          { label: 'Analytics', emoji: '📊', tab: 'analytics' },
           { label: 'Categories', emoji: '🏷️', tab: 'categories' },
           { label: 'Receipts', emoji: '🧾', tab: 'receipts' },
           { label: 'Recurring', emoji: '🔄', tab: 'subscriptions' },
@@ -1039,7 +1039,7 @@ function MonthCardInteractive({ metrics, spendingTrend, transactions, onNavigate
                   </div>
                 )}
                 <button
-                  onClick={(e) => { e.stopPropagation(); onNavigate('statistics') }}
+                  onClick={(e) => { e.stopPropagation(); onNavigate('analytics') }}
                   className="w-full py-2 rounded-xl bg-primary/10 text-primary text-[10px] font-bold hover:bg-primary/20 transition-colors"
                 >
                   View Full Breakdown →
