@@ -7,22 +7,30 @@ import { cn } from '@/lib/utils'
 
 const LOCK_PIN_KEY = 'pennyflow-lock-pin-hash'
 const LOCK_ENABLED_KEY = 'pennyflow-lock-enabled'
-const LOCK_TIMEOUT_KEY = 'pennyflow-lock-timeout'
+const LOCK_BIOMETRIC_KEY = 'pennyflow-lock-biometric'
 const LAST_ACTIVITY_KEY = 'pennyflow-last-activity'
 
 interface AppLockContextType {
   isLocked: boolean
   isEnabled: boolean
+  isBiometricAvailable: boolean
+  isBiometricEnabled: boolean
   enableLock: (pin: string) => void
   disableLock: () => void
+  enableBiometric: () => Promise<boolean>
+  disableBiometric: () => void
   changePIN: (oldPin: string, newPin: string) => boolean
 }
 
 const AppLockContext = createContext<AppLockContextType>({
   isLocked: false,
   isEnabled: false,
+  isBiometricAvailable: false,
+  isBiometricEnabled: false,
   enableLock: () => {},
   disableLock: () => {},
+  enableBiometric: async () => false,
+  disableBiometric: () => {},
   changePIN: () => false,
 })
 
@@ -30,13 +38,13 @@ export function useAppLock() {
   return useContext(AppLockContext)
 }
 
-// Simple hash function (not cryptographic — suitable for local PIN)
+// Simple hash function for local PIN
 function hashPIN(pin: string): string {
   let hash = 0
   for (let i = 0; i < pin.length; i++) {
     const char = pin.charCodeAt(i)
     hash = ((hash << 5) - hash) + char
-    hash = hash & hash // Convert to 32-bit int
+    hash = hash & hash
   }
   return Math.abs(hash).toString(36)
 }
@@ -45,11 +53,80 @@ function verifyPIN(input: string, storedHash: string): boolean {
   return hashPIN(input) === storedHash
 }
 
+// Check if biometric auth is available on this device
+async function checkBiometricAvailability(): Promise<boolean> {
+  if (typeof window === 'undefined') return false
+  if (!window.PublicKeyCredential) return false
+  try {
+    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+    return available
+  } catch {
+    return false
+  }
+}
+
+// Trigger biometric authentication via WebAuthn
+async function authenticateWithBiometric(): Promise<boolean> {
+  try {
+    // Use a simple challenge-response to trigger the biometric prompt
+    const challenge = new Uint8Array(32)
+    crypto.getRandomValues(challenge)
+
+    const credential = await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        timeout: 60000,
+        userVerification: 'required',
+        rpId: window.location.hostname,
+        allowCredentials: [],
+      },
+    })
+
+    // If we get here without error, biometric was successful
+    return true
+  } catch (err: any) {
+    // NotAllowedError means user cancelled or failed
+    // If no credentials exist, fall through to registration-based approach
+    if (err.name === 'NotAllowedError') return false
+
+    // Try simpler approach — use credential creation as auth verification
+    try {
+      const challenge = new Uint8Array(32)
+      crypto.getRandomValues(challenge)
+
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: 'PennyFlow', id: window.location.hostname },
+          user: {
+            id: new Uint8Array(16),
+            name: 'pennyflow-user',
+            displayName: 'PennyFlow User',
+          },
+          pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
+          authenticatorSelection: {
+            authenticatorAttachment: 'platform',
+            userVerification: 'required',
+          },
+          timeout: 60000,
+        },
+      })
+
+      return !!credential
+    } catch {
+      return false
+    }
+  }
+}
+
 export function AppLockProvider({ children }: { children: React.ReactNode }) {
   const [isLocked, setIsLocked] = useState(false)
   const [isEnabled, setIsEnabled] = useState(false)
+  const [isBiometricAvailable, setIsBiometricAvailable] = useState(false)
+  const [isBiometricEnabled, setIsBiometricEnabled] = useState(false)
   const [pinInput, setPinInput] = useState('')
   const [error, setError] = useState('')
+  const [biometricAttempting, setBiometricAttempting] = useState(false)
   const activityTimer = useRef<NodeJS.Timeout | null>(null)
 
   // Initialize lock state
@@ -57,10 +134,14 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     if (typeof window === 'undefined') return
 
     const enabled = localStorage.getItem(LOCK_ENABLED_KEY) === 'true'
+    const biometric = localStorage.getItem(LOCK_BIOMETRIC_KEY) === 'true'
     setIsEnabled(enabled)
+    setIsBiometricEnabled(biometric)
+
+    // Check biometric availability
+    checkBiometricAvailability().then(setIsBiometricAvailable)
 
     if (enabled) {
-      // Check if should be locked (5 minutes inactivity)
       const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY)
       const timeout = 5 * 60 * 1000 // 5 minutes
       if (!lastActivity || Date.now() - parseInt(lastActivity) > timeout) {
@@ -68,6 +149,31 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
       }
     }
   }, [])
+
+  // Auto-attempt biometric unlock when lock screen shows
+  useEffect(() => {
+    if (isLocked && isBiometricEnabled && isBiometricAvailable && !biometricAttempting) {
+      // Small delay to let the lock screen render first
+      const timer = setTimeout(() => {
+        attemptBiometricUnlock()
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [isLocked, isBiometricEnabled, isBiometricAvailable])
+
+  const attemptBiometricUnlock = async () => {
+    setBiometricAttempting(true)
+    try {
+      const success = await authenticateWithBiometric()
+      if (success) {
+        setIsLocked(false)
+        setPinInput('')
+        setError('')
+        localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString())
+      }
+    } catch {}
+    setBiometricAttempting(false)
+  }
 
   // Track activity for auto-lock
   useEffect(() => {
@@ -79,19 +185,15 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
 
     const checkTimeout = () => {
       const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY)
-      const timeout = 5 * 60 * 1000 // 5 minutes
+      const timeout = 5 * 60 * 1000
       if (lastActivity && Date.now() - parseInt(lastActivity) > timeout) {
         setIsLocked(true)
       }
     }
 
     updateActivity()
-
-    // Update on any interaction
     const events = ['mousedown', 'touchstart', 'keydown', 'scroll']
     events.forEach(event => document.addEventListener(event, updateActivity, { passive: true }))
-
-    // Check every 30 seconds
     activityTimer.current = setInterval(checkTimeout, 30000)
 
     return () => {
@@ -111,8 +213,29 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
   const disableLock = useCallback(() => {
     localStorage.removeItem(LOCK_PIN_KEY)
     localStorage.setItem(LOCK_ENABLED_KEY, 'false')
+    localStorage.setItem(LOCK_BIOMETRIC_KEY, 'false')
     setIsEnabled(false)
+    setIsBiometricEnabled(false)
     setIsLocked(false)
+  }, [])
+
+  const enableBiometric = useCallback(async (): Promise<boolean> => {
+    const available = await checkBiometricAvailability()
+    if (!available) return false
+
+    // Test that biometric actually works by doing a verification
+    const success = await authenticateWithBiometric()
+    if (success) {
+      localStorage.setItem(LOCK_BIOMETRIC_KEY, 'true')
+      setIsBiometricEnabled(true)
+      return true
+    }
+    return false
+  }, [])
+
+  const disableBiometric = useCallback(() => {
+    localStorage.setItem(LOCK_BIOMETRIC_KEY, 'false')
+    setIsBiometricEnabled(false)
   }, [])
 
   const changePIN = useCallback((oldPin: string, newPin: string): boolean => {
@@ -122,28 +245,11 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [])
 
-  const handleUnlock = useCallback(() => {
-    const stored = localStorage.getItem(LOCK_PIN_KEY)
-    if (!stored) return
-
-    if (verifyPIN(pinInput, stored)) {
-      setIsLocked(false)
-      setPinInput('')
-      setError('')
-      localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString())
-    } else {
-      setError('Incorrect PIN')
-      setPinInput('')
-      setTimeout(() => setError(''), 2000)
-    }
-  }, [pinInput])
-
   const handlePinDigit = (digit: string) => {
     if (pinInput.length >= 4) return
     const newPin = pinInput + digit
     setPinInput(newPin)
     if (newPin.length === 4) {
-      // Auto-submit after 4 digits
       setTimeout(() => {
         const stored = localStorage.getItem(LOCK_PIN_KEY)
         if (stored && verifyPIN(newPin, stored)) {
@@ -161,7 +267,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AppLockContext.Provider value={{ isLocked, isEnabled, enableLock, disableLock, changePIN }}>
+    <AppLockContext.Provider value={{ isLocked, isEnabled, isBiometricAvailable, isBiometricEnabled, enableLock, disableLock, enableBiometric, disableBiometric, changePIN }}>
       {children}
 
       {/* Lock Screen */}
@@ -181,8 +287,34 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
 
               <div className="text-center">
                 <h2 className="text-xl font-bold text-foreground">PennyFlow Locked</h2>
-                <p className="text-xs text-muted-foreground mt-1">Enter your 4-digit PIN</p>
+                <p className="text-[13px] text-muted-foreground mt-1">
+                  {isBiometricEnabled ? 'Use fingerprint or enter PIN' : 'Enter your 4-digit PIN'}
+                </p>
               </div>
+
+              {/* Biometric button */}
+              {isBiometricEnabled && isBiometricAvailable && (
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={attemptBiometricUnlock}
+                  disabled={biometricAttempting}
+                  className="flex flex-col items-center gap-2 p-5 rounded-2xl bg-primary/5 border border-primary/20 hover:bg-primary/10 transition-colors"
+                >
+                  <Fingerprint className={cn("w-10 h-10 text-primary", biometricAttempting && "animate-pulse")} />
+                  <span className="text-[12px] font-medium text-primary">
+                    {biometricAttempting ? 'Verifying...' : 'Tap to unlock with fingerprint'}
+                  </span>
+                </motion.button>
+              )}
+
+              {/* Divider if both options available */}
+              {isBiometricEnabled && isBiometricAvailable && (
+                <div className="flex items-center gap-3 w-full">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-[11px] text-muted-foreground">or use PIN</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              )}
 
               {/* PIN Dots */}
               <div className="flex gap-4">

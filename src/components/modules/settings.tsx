@@ -10,7 +10,7 @@ import { SyncCard } from '@/components/ui/sync-card'
 import { 
   User, Mail, Globe, Palette, Download, Upload, Settings as SettingsIcon,
   Bell, Lock, Trash2, LogOut, ArrowRight, Check, X, ChevronRight,
-  FileJson, Database, RotateCcw, Camera, Image
+  FileJson, Database, RotateCcw, Camera, Image, Fingerprint
 } from 'lucide-react'
 import { useAppLock } from '@/providers/AppLockProvider'
 
@@ -587,9 +587,10 @@ export function Settings() {
 
 // Phase 18: App Lock Settings Component
 function AppLockSettings() {
-  const { isEnabled, enableLock, disableLock } = useAppLock()
+  const { isEnabled, isBiometricAvailable, isBiometricEnabled, enableLock, disableLock, enableBiometric, disableBiometric } = useAppLock()
   const [showSetPin, setShowSetPin] = useState(false)
   const [newPin, setNewPin] = useState('')
+  const [biometricLoading, setBiometricLoading] = useState(false)
 
   const handleEnable = () => {
     if (newPin.length === 4 && /^\d{4}$/.test(newPin)) {
@@ -599,16 +600,27 @@ function AppLockSettings() {
     }
   }
 
+  const handleBiometricToggle = async () => {
+    if (isBiometricEnabled) {
+      disableBiometric()
+    } else {
+      setBiometricLoading(true)
+      await enableBiometric()
+      setBiometricLoading(false)
+    }
+  }
+
   return (
     <>
+      {/* PIN Lock */}
       <div className="bg-secondary/30 border border-border rounded-xl p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-rose-500/20 flex items-center justify-center">
             <Lock className="w-5 h-5 text-rose-500" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-foreground">App Lock</p>
-            <p className="text-xs text-muted-foreground">{isEnabled ? '4-digit PIN active' : 'Disabled'}</p>
+            <p className="text-sm font-semibold text-foreground">PIN Lock</p>
+            <p className="text-xs text-muted-foreground">{isEnabled ? 'Active — locks after 5 min' : 'Protect your data'}</p>
           </div>
         </div>
         <button
@@ -650,6 +662,31 @@ function AppLockSettings() {
             </button>
           </div>
         </motion.div>
+      )}
+
+      {/* Fingerprint / Biometric */}
+      {isBiometricAvailable && isEnabled && (
+        <div className="bg-secondary/30 border border-border rounded-xl p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+              <Fingerprint className="w-5 h-5 text-purple-500" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Fingerprint Unlock</p>
+              <p className="text-xs text-muted-foreground">{isBiometricEnabled ? 'Enabled — unlock with touch' : 'Use biometrics to unlock'}</p>
+            </div>
+          </div>
+          <button
+            onClick={handleBiometricToggle}
+            disabled={biometricLoading}
+            className={`w-12 h-6 rounded-full transition-colors ${isBiometricEnabled ? 'bg-emerald-500' : 'bg-gray-400'}`}
+          >
+            <motion.div
+              animate={{ x: isBiometricEnabled ? 24 : 2 }}
+              className="w-5 h-5 bg-white rounded-full"
+            />
+          </button>
+        </div>
       )}
     </>
   )
