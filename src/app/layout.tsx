@@ -22,8 +22,14 @@ export const metadata: Metadata = {
   description: "A local-first personal finance tracker for managing net worth, cash flow, assets, liabilities, and investments.",
   manifest: "/manifest.json",
   icons: {
-    icon: "/app-assets/favicon.png",
-    apple: "/app-assets/favicon.png",
+    icon: [
+      { url: "/Favicon assets/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/Favicon assets/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/Favicon assets/favicon.ico", sizes: "48x48" },
+    ],
+    apple: [
+      { url: "/Favicon assets/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
   },
 };
 

@@ -5,14 +5,32 @@
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#050505",
-  "theme_color": "#050505",
+  "background_color": "#ffffff",
+  "theme_color": "#6d5efc",
   "icons": [
     {
-      "src": "/app-assets/pennyflow-logo.png",
+      "src": "/Favicon assets/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/Favicon assets/android-chrome-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/Favicon assets/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/Favicon assets/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
@@ -21,14 +39,14 @@
       "short_name": "Add",
       "description": "Quickly add a new expense",
       "url": "/?action=add-expense",
-      "icons": [{ "src": "/app-assets/pennyflow-logo.png", "sizes": "96x96" }]
+      "icons": [{ "src": "/Favicon assets/android-chrome-192x192.png", "sizes": "192x192" }]
     },
     {
       "name": "View Balance",
       "short_name": "Balance",
       "description": "Check your account balance",
       "url": "/?action=view-balance",
-      "icons": [{ "src": "/app-assets/pennyflow-logo.png", "sizes": "96x96" }]
+      "icons": [{ "src": "/Favicon assets/android-chrome-192x192.png", "sizes": "192x192" }]
     }
   ]
 }

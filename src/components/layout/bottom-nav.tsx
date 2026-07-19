@@ -139,7 +139,7 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
             <div className="flex items-center justify-between px-5 h-16 border-b border-border/50">
               <div className="flex items-center gap-3">
                 <img 
-                  src="/app-assets/pennyflow-logo.png" 
+                  src="/Favicon assets/android-chrome-192x192.png" 
                   alt="PennyFlow" 
                   className="w-8 h-8 rounded-lg object-contain"
                 />
