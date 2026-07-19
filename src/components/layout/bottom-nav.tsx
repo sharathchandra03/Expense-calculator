@@ -5,7 +5,7 @@ import { LayoutDashboard, Wallet, TrendingUp, Landmark, Settings, Plus, Heart, C
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 
-export type TabType = 'dashboard' | 'ledger' | 'accounts' | 'analytics' | 'budgets' | 'bills' | 'subscriptions' | 'goals' | 'debtplanner' | 'categories' | 'receipts' | 'splits' | 'investments' | 'lending' | 'assets' | 'reports' | 'notifications' | 'csvimport' | 'settings';
+export type TabType = 'dashboard' | 'ledger' | 'accounts' | 'analytics' | 'budgets' | 'bills' | 'subscriptions' | 'goals' | 'debtplanner' | 'categories' | 'receipts' | 'splits' | 'investments' | 'lending' | 'assets' | 'reports' | 'notifications' | 'csvimport' | 'settings' | 'about';
 
 interface BottomNavProps {
   activeTab: TabType;
@@ -42,6 +42,7 @@ const DEFAULT_NAV_ITEMS: NavItem[] = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   // App
   { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'about', label: 'About PennyFlow', icon: Heart },
 ]
 
 export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNavProps) {
@@ -159,13 +160,13 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
 
             {/* Reorder toggle */}
             <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Menu</span>
+              <span className="text-[11px] font-bold text-foreground/70 uppercase tracking-wide">Menu</span>
             </div>
 
             {/* Nav items — organized by sections */}
             <nav className="flex-1 overflow-y-auto px-3 pb-4">
               {/* Section: Money */}
-              <p className="px-3 pt-3 pb-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Money</p>
+              <p className="px-3 pt-3 pb-1.5 text-[10px] font-bold text-foreground/70 uppercase tracking-wider">Money</p>
               {navItems.slice(0, 5).map((item) => {
                 const Icon = item.icon
                 const isActive = activeTab === item.id
@@ -178,7 +179,7 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
               })}
 
               {/* Section: Tracking */}
-              <p className="px-3 pt-4 pb-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Tracking</p>
+              <p className="px-3 pt-4 pb-1.5 text-[10px] font-bold text-foreground/70 uppercase tracking-wider">Tracking</p>
               {navItems.slice(5, 9).map((item) => {
                 const Icon = item.icon
                 const isActive = activeTab === item.id
@@ -191,7 +192,7 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
               })}
 
               {/* Section: Assets */}
-              <p className="px-3 pt-4 pb-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Assets</p>
+              <p className="px-3 pt-4 pb-1.5 text-[10px] font-bold text-foreground/70 uppercase tracking-wider">Assets</p>
               {navItems.slice(9, 13).map((item) => {
                 const Icon = item.icon
                 const isActive = activeTab === item.id
@@ -204,7 +205,7 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
               })}
 
               {/* Section: Tools */}
-              <p className="px-3 pt-4 pb-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Tools</p>
+              <p className="px-3 pt-4 pb-1.5 text-[10px] font-bold text-foreground/70 uppercase tracking-wider">Tools</p>
               {navItems.slice(13).map((item) => {
                 const Icon = item.icon
                 const isActive = activeTab === item.id

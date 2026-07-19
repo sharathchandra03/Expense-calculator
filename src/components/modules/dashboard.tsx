@@ -346,7 +346,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
   const monthTrendPct = monthIncomeTotal > 0 ? Math.round((monthNet / monthIncomeTotal) * 100) : 0
 
   return (
-    <div className="flex flex-col pb-24 bg-background">
+    <div className="flex flex-col pb-6 bg-background">
       {/* === HERO + REPORT COMPOSITION === */}
       <div className="px-5 pt-10">
         {/* Purple hero card — same horizontal margins as report card */}
@@ -1234,48 +1234,49 @@ function CashCardInteractive({ availableCash, liquidAssets, monthlyExpenses, mon
   )
 }
 
-// Dashboard reorderable card — only drags on long-press (prevents accidental reorder while scrolling)
+// Dashboard reorderable card — long-press to drag (works on mobile + desktop)
 function DashReorderCard({ cardId, children }: { cardId: DashCardId; children: React.ReactNode }) {
-  const controls = useDragControls()
-  const [isDragEnabled, setIsDragEnabled] = React.useState(false)
+  const [isDragActive, setIsDragActive] = React.useState(false)
   const longPressTimer = React.useRef<NodeJS.Timeout | null>(null)
+  const itemRef = React.useRef<HTMLDivElement>(null)
 
-  const handlePointerDown = (e: React.PointerEvent) => {
-    // Start a 500ms long-press timer before enabling drag
+  const startLongPress = () => {
     longPressTimer.current = setTimeout(() => {
-      setIsDragEnabled(true)
-      controls.start(e.nativeEvent as any)
-    }, 500)
+      setIsDragActive(true)
+      // Haptic feedback on supported devices
+      if (navigator.vibrate) navigator.vibrate(30)
+    }, 400)
   }
 
-  const handlePointerUp = () => {
+  const cancelLongPress = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current)
       longPressTimer.current = null
     }
-    setIsDragEnabled(false)
   }
 
-  const handlePointerCancel = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current)
-      longPressTimer.current = null
-    }
-    setIsDragEnabled(false)
+  const endDrag = () => {
+    cancelLongPress()
+    setIsDragActive(false)
   }
 
   return (
     <Reorder.Item
       value={cardId}
-      dragListener={false}
-      dragControls={controls}
-      className={isDragEnabled ? "cursor-grabbing" : ""}
-      whileDrag={{ scale: 1.02, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', zIndex: 50 }}
+      dragListener={isDragActive}
+      className={isDragActive ? "cursor-grabbing z-50 relative" : ""}
+      style={{ touchAction: isDragActive ? 'none' : 'pan-y' }}
+      whileDrag={{ scale: 1.02, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}
       transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerCancel}
+      onPointerDown={startLongPress}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onDragEnd={endDrag}
+      ref={itemRef}
     >
+      {isDragActive && (
+        <div className="absolute inset-0 rounded-2xl border-2 border-dashed border-ring/40 pointer-events-none z-10" />
+      )}
       {children}
     </Reorder.Item>
   )

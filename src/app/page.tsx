@@ -26,6 +26,7 @@ import { ReceiptGallery } from '@/components/modules/receipt-gallery'
 import { RecurringTransactionService } from '@/services/RecurringTransactionService'
 import { SubscriptionTracker } from '@/components/modules/subscriptions'
 import { CSVImport } from '@/components/modules/csv-import'
+import { AboutApp } from '@/components/modules/about-app'
 import { AnimatePresence, motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
@@ -186,6 +187,8 @@ export default function Home() {
           return <CSVImport key="csvimport" />
         case 'settings':
           return <Settings key="settings" />
+        case 'about':
+          return <AboutApp key="about" />
         default:
           return <Dashboard key="dashboard" onNavigateToTab={(tab) => handleTabChange(tab)} />
       }

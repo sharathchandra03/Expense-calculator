@@ -183,7 +183,7 @@ export function Analytics() {
   const totalNetWorth = netWorthComposition.reduce((s, d) => s + d.value, 0)
 
   return (
-    <div className="flex flex-col space-y-5 pb-28">
+    <div className="flex flex-col space-y-5 pb-6">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Analytics</h1>
         <p className="text-xs text-muted-foreground">Complete financial analysis for {periodLabel}.</p>

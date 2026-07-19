@@ -48,7 +48,7 @@ export function GoalsDashboard() {
   }
 
   return (
-    <div className="flex flex-col space-y-5 pb-28">
+    <div className="flex flex-col space-y-5 pb-6">
       <h1 className="text-xl font-bold">Savings Goals</h1>
 
       {/* Summary */}

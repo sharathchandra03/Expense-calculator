@@ -211,7 +211,7 @@ export function CustomCategories() {
   const hiddenIncome = ALL_DEFAULT_INCOME.filter(c => hiddenDefaults.includes(c))
 
   return (
-    <div className="flex flex-col space-y-5 pb-28">
+    <div className="flex flex-col space-y-5 pb-6">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Categories</h1>
         <p className="text-xs text-muted-foreground">Manage expense and income categories. Tap X to remove defaults.</p>

@@ -137,7 +137,7 @@ export function BudgetManager() {
   }
 
   return (
-    <div className="flex flex-col space-y-5 pb-28">
+    <div className="flex flex-col space-y-5 pb-6">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Budget Management</h1>
         <p className="text-xs text-muted-foreground">Set and track spending limits by category.</p>

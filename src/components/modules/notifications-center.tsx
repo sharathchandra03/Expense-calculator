@@ -53,7 +53,7 @@ export function NotificationsCenter() {
   }
 
   return (
-    <div className="flex flex-col space-y-5 pb-28">
+    <div className="flex flex-col space-y-5 pb-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight">Notifications</h1>

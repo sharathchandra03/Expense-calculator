@@ -242,7 +242,7 @@ export function DebtPlanner() {
   }, [safeDebts, extraPayment, strategy, payoffData])
 
   return (
-    <div className="flex flex-col space-y-5 pb-28">
+    <div className="flex flex-col space-y-5 pb-6">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Debt Payoff Planner</h1>
         <p className="text-xs text-muted-foreground">Plan your path to financial freedom</p>

@@ -40,7 +40,7 @@ export function ReceiptGallery() {
   }
 
   return (
-    <div className="flex flex-col space-y-5 pb-28">
+    <div className="flex flex-col space-y-5 pb-6">
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold tracking-tight">Receipt Gallery</h1>

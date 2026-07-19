@@ -23,13 +23,18 @@ interface ParsedRow {
  * Supports common Indian bank formats
  */
 export function CSVImport() {
-  const [step, setStep] = useState<'upload' | 'map' | 'preview' | 'done'>('upload')
+  const [step, setStep] = useState<'upload' | 'sheet' | 'map' | 'preview' | 'done'>('upload')
   const [rawData, setRawData] = useState<string[][]>([])
   const [headers, setHeaders] = useState<string[]>([])
   const [mapping, setMapping] = useState<{ date: number; description: number; amount: number; type: number; category: number }>({ date: 0, description: 1, amount: 2, type: -1, category: -1 })
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([])
   const [importCount, setImportCount] = useState(0)
   const [importing, setImporting] = useState(false)
+  // Excel-specific state
+  const [excelSheets, setExcelSheets] = useState<string[]>([])
+  const [excelAllRows, setExcelAllRows] = useState<string[][]>([])
+  const [selectedHeaderRow, setSelectedHeaderRow] = useState(0)
+  const [workbookRef, setWorkbookRef] = useState<any>(null)
 
   const accounts = useLiveQuery(() => db.accounts.toArray()) ?? []
   const existingTx = useLiveQuery(() => db.transactions.toArray()) ?? []
@@ -44,23 +49,26 @@ export function CSVImport() {
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
 
     if (isExcel) {
-      // Parse Excel file
       const reader = new FileReader()
       reader.onload = (evt) => {
-        const data = new Uint8Array(evt.target?.result as ArrayBuffer)
-        const workbook = XLSX.read(data, { type: 'array' })
-        const sheetName = workbook.SheetNames[0]
-        const sheet = workbook.Sheets[sheetName]
-        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as string[][]
+        try {
+          const data = new Uint8Array(evt.target?.result as ArrayBuffer)
+          const workbook = XLSX.read(data, { type: 'array', cellDates: true, dateNF: 'yyyy-mm-dd' })
 
-        if (jsonData.length < 2) return
+          setWorkbookRef(workbook)
+          setExcelSheets(workbook.SheetNames)
 
-        const headerRow = jsonData[0].map(h => String(h || ''))
-        const dataRows = jsonData.slice(1).map(row => (row || []).map(cell => String(cell || '')))
-        setHeaders(headerRow)
-        setRawData(dataRows)
-        autoDetectMapping(headerRow)
-        setStep('map')
+          if (workbook.SheetNames.length > 1) {
+            // Multiple sheets - let user pick
+            setStep('sheet')
+          } else {
+            // Single sheet - process directly
+            processExcelSheet(workbook, workbook.SheetNames[0])
+          }
+        } catch (err) {
+          console.error('Excel parse error:', err)
+          alert('Could not read this Excel file. It may be corrupted or password-protected.')
+        }
       }
       reader.readAsArrayBuffer(file)
     } else {
@@ -93,6 +101,97 @@ export function CSVImport() {
       reader.readAsText(file)
     }
   }, [])
+
+  // Process a specific Excel sheet
+  const processExcelSheet = (workbook: any, sheetName: string) => {
+    const sheet = workbook.Sheets[sheetName]
+    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, dateNF: 'dd/mm/yyyy' }) as any[][]
+
+    // Filter out completely empty rows
+    const nonEmptyRows = jsonData.filter(row => row && row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== ''))
+
+    if (nonEmptyRows.length < 2) {
+      alert('This sheet appears to be empty or has less than 2 rows.')
+      return
+    }
+
+    // Find max columns across all rows
+    const maxCols = Math.max(...nonEmptyRows.map(r => r?.length || 0))
+
+    // Convert all cells to strings, pad short rows
+    const allRows = nonEmptyRows.map(row =>
+      Array.from({ length: maxCols }, (_, i) => {
+        const cell = row?.[i]
+        if (cell === null || cell === undefined) return ''
+        if (cell instanceof Date) return cell.toLocaleDateString('en-GB')
+        return String(cell).trim()
+      })
+    )
+
+    setExcelAllRows(allRows)
+
+    // Smart header detection - look for the row that has the most "header-like" words
+    const headerKeywords = ['date', 'amount', 'category', 'note', 'description', 'account', 'type', 'income', 'expense', 'inr', 'currency', 'debit', 'credit', 'narration', 'particular', 'subcategory']
+    
+    let bestHeaderIdx = 0
+    let bestScore = 0
+
+    for (let i = 0; i < Math.min(allRows.length, 15); i++) {
+      const row = allRows[i]
+      // Count how many cells match header keywords
+      const score = row.filter(cell => {
+        const lower = cell.toLowerCase()
+        return headerKeywords.some(kw => lower.includes(kw))
+      }).length
+
+      // Also consider: row has 3+ non-empty cells that are text (not just numbers)
+      const textCells = row.filter(c => c && isNaN(Number(c.replace(/[\/\-\:\.]/g, '')))).length
+
+      const totalScore = score * 3 + textCells // Keyword matches weighted heavily
+
+      if (totalScore > bestScore) {
+        bestScore = totalScore
+        bestHeaderIdx = i
+      }
+    }
+
+    setSelectedHeaderRow(bestHeaderIdx)
+    applyHeaderRow(allRows, bestHeaderIdx)
+  }
+
+  // Apply a specific row as the header
+  const applyHeaderRow = (allRows: string[][], headerIdx: number) => {
+    let headerRow = allRows[headerIdx]
+    let dataRows = allRows.slice(headerIdx + 1)
+
+    // Remove empty leading columns (some apps have blank first column)
+    const firstNonEmptyCol = headerRow.findIndex(h => h.trim() !== '')
+    if (firstNonEmptyCol > 0) {
+      headerRow = headerRow.slice(firstNonEmptyCol)
+      dataRows = dataRows.map(r => r.slice(firstNonEmptyCol))
+    }
+
+    // Filter out data rows that are completely empty
+    dataRows = dataRows.filter(row => row.some(cell => cell.trim() !== ''))
+
+    setHeaders(headerRow)
+    setRawData(dataRows)
+    autoDetectMapping(headerRow)
+    setStep('map')
+  }
+
+  // Select Excel sheet
+  const handleSheetSelect = (sheetName: string) => {
+    if (workbookRef) {
+      processExcelSheet(workbookRef, sheetName)
+    }
+  }
+
+  // Change header row selection
+  const handleHeaderRowChange = (rowIdx: number) => {
+    setSelectedHeaderRow(rowIdx)
+    applyHeaderRow(excelAllRows, rowIdx)
+  }
 
   // Auto-detect column mapping from headers
   const autoDetectMapping = (headerRow: string[]) => {
@@ -289,7 +388,7 @@ export function CSVImport() {
   }
 
   return (
-    <div className="flex flex-col space-y-5 pb-28">
+    <div className="flex flex-col space-y-5 pb-6">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Import & Export</h1>
         <p className="text-xs text-muted-foreground">Import transactions from CSV or Excel, or export your data</p>
@@ -298,16 +397,17 @@ export function CSVImport() {
       {/* Step Indicator */}
       <div className="flex items-center gap-2">
         {['Upload', 'Map', 'Preview', 'Done'].map((label, i) => {
-          const stepIdx = ['upload', 'map', 'preview', 'done'].indexOf(step)
+          const steps = ['upload', 'map', 'preview', 'done']
+          const currentStepIdx = step === 'sheet' ? 0 : steps.indexOf(step)
           return (
             <div key={label} className="flex items-center gap-2">
               <div className={cn(
                 "w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold",
-                i <= stepIdx ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"
+                i <= currentStepIdx ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"
               )}>
-                {i < stepIdx ? <Check className="w-3 h-3" /> : i + 1}
+                {i < currentStepIdx ? <Check className="w-3 h-3" /> : i + 1}
               </div>
-              <span className={cn("text-[10px] font-medium", i <= stepIdx ? "text-foreground" : "text-muted-foreground")}>{label}</span>
+              <span className={cn("text-[10px] font-medium", i <= currentStepIdx ? "text-foreground" : "text-muted-foreground")}>{label}</span>
               {i < 3 && <ArrowRight className="w-3 h-3 text-muted-foreground/40" />}
             </div>
           )
@@ -348,9 +448,48 @@ export function CSVImport() {
           </motion.div>
         )}
 
+        {/* Sheet selection step (for multi-sheet Excel files) */}
+        {step === 'sheet' && (
+          <motion.div key="sheet" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+            <p className="text-xs font-semibold text-foreground">This file has multiple sheets. Pick one:</p>
+            <div className="space-y-2">
+              {excelSheets.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => handleSheetSelect(name)}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl bg-card border border-border hover:border-ring/40 transition-colors text-left"
+                >
+                  <FileSpreadsheet className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                  <span className="text-[13px] font-medium text-foreground">{name}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => { setStep('upload'); setExcelSheets([]) }} className="text-[12px] text-muted-foreground hover:text-foreground transition-colors">
+              ← Pick a different file
+            </button>
+          </motion.div>
+        )}
+
         {step === 'map' && (
           <motion.div key="map" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-            <p className="text-xs font-semibold text-foreground">Map your CSV columns ({rawData.length} rows detected)</p>
+            {/* Header row picker for Excel */}
+            {excelAllRows.length > 0 && (
+              <div className="p-3 rounded-xl bg-secondary/30 border border-border/30 space-y-2">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase">Header Row</p>
+                <p className="text-[10px] text-muted-foreground">If columns look wrong, pick which row has the column names:</p>
+                <select
+                  value={selectedHeaderRow}
+                  onChange={(e) => handleHeaderRowChange(parseInt(e.target.value))}
+                  className="w-full h-9 px-3 rounded-lg bg-background border border-border/50 text-xs text-foreground focus:outline-none"
+                >
+                  {excelAllRows.slice(0, 10).map((row, i) => (
+                    <option key={i} value={i}>Row {i + 1}: {row.slice(0, 4).filter(Boolean).join(' | ')}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <p className="text-xs font-semibold text-foreground">Map your columns ({rawData.length} rows detected)</p>
 
             <div className="space-y-3">
               {(['date', 'description', 'amount'] as const).map(field => (

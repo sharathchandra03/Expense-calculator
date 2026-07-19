@@ -113,7 +113,7 @@ export function LendingDashboard() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-28">
+    <div className="max-w-4xl mx-auto space-y-6 pb-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}

@@ -51,7 +51,7 @@ export function InvestmentTracker() {
   }
 
   return (
-    <div className="flex flex-col space-y-5 pb-28">
+    <div className="flex flex-col space-y-5 pb-6">
       <h1 className="text-xl font-bold">Investment Portfolio</h1>
 
       {/* Portfolio Summary */}

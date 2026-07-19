@@ -31,7 +31,7 @@ export function SplitExpenses() {
   const totalOwed = summary.reduce((sum, s) => sum + s.amount, 0)
 
   return (
-    <div className="flex flex-col space-y-5 pb-28">
+    <div className="flex flex-col space-y-5 pb-6">
       <div>
         <h1 className="text-xl font-bold tracking-tight">Split Expenses</h1>
         <p className="text-xs text-muted-foreground">Track shared expenses and settlements</p>

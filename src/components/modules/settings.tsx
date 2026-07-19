@@ -207,7 +207,7 @@ export function Settings() {
   const currencySymbol = currency === 'INR' ? '₹' : '$'
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-20">
+    <div className="max-w-2xl mx-auto space-y-6 pb-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -560,7 +560,7 @@ export function Settings() {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
-        className="space-y-3 pb-20"
+        className="space-y-3 pb-6"
       >
         <h3 className="text-sm font-bold text-foreground uppercase opacity-60">About PennyFlow</h3>
         <div className="bg-secondary/30 border border-border rounded-xl p-4 space-y-3">

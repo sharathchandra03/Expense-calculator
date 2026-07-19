@@ -242,7 +242,7 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
   }
 
   return (
-    <div className="flex flex-col pb-24 -mx-5 -mt-4">
+    <div className="flex flex-col pb-6 -mx-5 -mt-4">
       {/* Month Navigation Header */}
       <div className="flex items-center justify-between px-5 py-4">
         <div className="flex items-center gap-3">

@@ -155,7 +155,7 @@ export function BillsManager() {
   }
 
   return (
-    <div className="flex flex-col space-y-5 pb-28">
+    <div className="flex flex-col space-y-5 pb-6">
       {/* Module Title */}
       <div>
         <h1 className="text-xl font-bold tracking-tight">Bills & Obligations</h1>
