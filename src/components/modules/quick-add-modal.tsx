@@ -8,6 +8,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, generateUUID, syncAccountToAsset } from '@/db/schema'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { AmountInput } from '@/components/ui/amount-input'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { CategorySelect } from '@/components/ui/category-select'
@@ -489,12 +490,11 @@ function ExpenseForm({ form, onSubmit, accounts }: any) {
     <form onSubmit={form.handleSubmit((data: any) => onSubmit({ ...data, receiptImage: receiptPreview }))} className="space-y-5">
       <div>
         <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Amount</label>
-        <Input
-          type="number"
-          placeholder="0.00"
-          {...form.register('amount')}
+        <AmountInput
+          value={form.watch('amount') || ''}
+          onChange={(val) => form.setValue('amount', val, { shouldValidate: true })}
+          placeholder="0"
           className="text-lg h-12"
-          step="0.01"
         />
         {form.formState.errors.amount && <p className="text-[11px] text-destructive mt-1">{form.formState.errors.amount.message}</p>}
       </div>
@@ -589,7 +589,12 @@ function IncomeForm({ form, onSubmit, accounts }: any) {
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Amount</label>
-        <Input type="number" placeholder="0.00" {...form.register('amount')} className="mt-1 text-lg" step="0.01" />
+        <AmountInput
+          value={form.watch('amount') || ''}
+          onChange={(val) => form.setValue('amount', val, { shouldValidate: true })}
+          placeholder="0"
+          className="mt-1 text-lg"
+        />
         {form.formState.errors.amount && <p className="text-xs text-red-500 mt-1">{form.formState.errors.amount.message}</p>}
       </div>
 
@@ -644,7 +649,12 @@ function LendingForm({ form, onSubmit }: any) {
 
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Amount</label>
-        <Input type="number" placeholder="0.00" {...form.register('amount')} className="mt-1 text-lg" step="0.01" />
+        <AmountInput
+          value={form.watch('amount') || ''}
+          onChange={(val) => form.setValue('amount', val, { shouldValidate: true })}
+          placeholder="0"
+          className="mt-1 text-lg"
+        />
       </div>
 
       <div>
@@ -727,7 +737,12 @@ function BillForm({ form, onSubmit }: any) {
 
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Amount</label>
-        <Input type="number" placeholder="0.00" {...form.register('amount')} className="mt-2 text-lg" step="0.01" />
+        <AmountInput
+          value={form.watch('amount') || ''}
+          onChange={(val) => form.setValue('amount', val, { shouldValidate: true })}
+          placeholder="0"
+          className="mt-2 text-lg"
+        />
         {form.formState.errors.amount && <p className="text-xs text-destructive mt-1">{form.formState.errors.amount.message}</p>}
       </div>
 
@@ -774,12 +789,22 @@ function GoalForm({ form, onSubmit }: any) {
 
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Target Amount</label>
-        <Input type="number" placeholder="0.00" {...form.register('targetAmount')} className="mt-1 text-lg" step="0.01" />
+        <AmountInput
+          value={form.watch('targetAmount') || ''}
+          onChange={(val) => form.setValue('targetAmount', val, { shouldValidate: true })}
+          placeholder="0"
+          className="mt-1 text-lg"
+        />
       </div>
 
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Current Amount</label>
-        <Input type="number" placeholder="0.00" {...form.register('currentAmount')} className="mt-1 text-lg" step="0.01" />
+        <AmountInput
+          value={form.watch('currentAmount') || ''}
+          onChange={(val) => form.setValue('currentAmount', val, { shouldValidate: true })}
+          placeholder="0"
+          className="mt-1 text-lg"
+        />
       </div>
 
       <div>

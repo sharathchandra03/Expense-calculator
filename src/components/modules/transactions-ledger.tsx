@@ -13,6 +13,8 @@ import { cn } from '@/lib/utils'
 import { motion, AnimatePresence, PanInfo, useMotionValue, useTransform } from 'framer-motion'
 import { useUndo } from '@/components/ui/undo-toast'
 import { getCategoryConfig } from '@/lib/category-icons'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useToast } from '@/components/ui/toast-notification'
 
 export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab: string) => void } = {}) {
   const [search, setSearch] = useState('')
@@ -27,8 +29,11 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
     return { month: now.getMonth(), year: now.getFullYear() }
   })
   const [viewTab, setViewTab] = useState<'daily' | 'calendar' | 'monthly' | 'total' | 'note'>('daily')
+  // Confirmation dialog state for swipe actions
+  const [swipeConfirm, setSwipeConfirm] = useState<{ type: 'delete' | 'duplicate'; tx: Transaction } | null>(null)
 
   const { showUndo } = useUndo()
+  const { showToast } = useToast()
 
   // Dexie Queries with null safety
   const rawTransactions = useLiveQuery(() => db.transactions.toArray()) ?? []
@@ -335,7 +340,7 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
       {viewTab === 'daily' && (
         <div className="flex flex-col">
           {sortedDates.length > 0 ? (
-            sortedDates.map((date) => {
+            sortedDates.map((date, dateIndex) => {
               const dayTx = monthGrouped[date]
               const dayIncome = dayTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
               const dayExpense = dayTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
@@ -387,13 +392,15 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
 
                         <motion.div
                           drag="x"
-                          dragConstraints={{ left: -100, right: 100 }}
-                          dragElastic={0.1}
+                          dragDirectionLock
+                          dragConstraints={{ left: -120, right: 120 }}
+                          dragElastic={0.05}
+                          dragSnapToOrigin
                           onDragEnd={(_, info: PanInfo) => {
-                            if (info.offset.x < -80) handleDeleteTransaction(tx)
-                            else if (info.offset.x > 80) handleDuplicateTransaction(tx)
+                            if (info.offset.x < -100) setSwipeConfirm({ type: 'delete', tx })
+                            else if (info.offset.x > 100) setSwipeConfirm({ type: 'duplicate', tx })
                           }}
-                          className="relative bg-background cursor-grab active:cursor-grabbing"
+                          className="relative bg-background"
                         >
                           <div
                             onClick={() => {
@@ -472,6 +479,11 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
                       </div>
                     )
                   })}
+
+                  {/* Day separator line */}
+                  {dateIndex < sortedDates.length - 1 && (
+                    <div className="mx-5 border-b border-border/30 mt-1" />
+                  )}
                 </div>
               )
             })
@@ -546,6 +558,28 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Swipe Action Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!swipeConfirm}
+        title={swipeConfirm?.type === 'delete' ? 'Delete Transaction?' : 'Duplicate Transaction?'}
+        message={
+          swipeConfirm?.type === 'delete'
+            ? `Are you sure you want to delete "${swipeConfirm.tx.description || swipeConfirm.tx.category}" (${formatCurrency(swipeConfirm.tx.amount)})? Your account balance will be restored.`
+            : `This will create a copy of "${swipeConfirm?.tx.description || swipeConfirm?.tx.category}" (${formatCurrency(swipeConfirm?.tx.amount || 0)}) dated today.`
+        }
+        confirmLabel={swipeConfirm?.type === 'delete' ? 'Delete' : 'Duplicate'}
+        cancelLabel="Cancel"
+        variant={swipeConfirm?.type === 'delete' ? 'danger' : 'warning'}
+        onConfirm={() => {
+          if (swipeConfirm) {
+            if (swipeConfirm.type === 'delete') handleDeleteTransaction(swipeConfirm.tx)
+            else handleDuplicateTransaction(swipeConfirm.tx)
+          }
+          setSwipeConfirm(null)
+        }}
+        onCancel={() => setSwipeConfirm(null)}
+      />
     </div>
   )
 }
@@ -901,6 +935,7 @@ function TotalView({ currentMonth, monthTransactions, monthIncome, monthExpense,
   filteredTransactions: Transaction[]
   onNavigateToTab?: (tab: string) => void
 }) {
+  const { showToast } = useToast()
   const year = currentMonth.year
   const month = currentMonth.month
   const lastDay = new Date(year, month + 1, 0).getDate()
@@ -938,7 +973,7 @@ function TotalView({ currentMonth, monthTransactions, monthIncome, monthExpense,
   // Export to CSV/Excel
   const handleExport = () => {
     if (monthTransactions.length === 0) {
-      alert('No transactions to export for this month.')
+      showToast('No transactions to export for this month')
       return
     }
 

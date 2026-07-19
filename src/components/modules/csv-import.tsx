@@ -7,6 +7,7 @@ import { formatCurrency, cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, FileText, Check, AlertCircle, X, ArrowRight, Download, FileSpreadsheet } from 'lucide-react'
 import * as XLSX from 'xlsx'
+import { useToast } from '@/components/ui/toast-notification'
 
 interface ParsedRow {
   date: string
@@ -26,6 +27,7 @@ export function CSVImport() {
   const [step, setStep] = useState<'upload' | 'sheet' | 'map' | 'preview' | 'done'>('upload')
   const [rawData, setRawData] = useState<string[][]>([])
   const [headers, setHeaders] = useState<string[]>([])
+  const { showToast } = useToast()
   const [mapping, setMapping] = useState<{ date: number; description: number; amount: number; type: number; category: number }>({ date: 0, description: 1, amount: 2, type: -1, category: -1 })
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([])
   const [importCount, setImportCount] = useState(0)
@@ -67,7 +69,7 @@ export function CSVImport() {
           }
         } catch (err) {
           console.error('Excel parse error:', err)
-          alert('Could not read this Excel file. It may be corrupted or password-protected.')
+          showToast('Could not read this Excel file. It may be corrupted or password-protected.')
         }
       }
       reader.readAsArrayBuffer(file)
@@ -111,7 +113,7 @@ export function CSVImport() {
     const nonEmptyRows = jsonData.filter(row => row && row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== ''))
 
     if (nonEmptyRows.length < 2) {
-      alert('This sheet appears to be empty or has less than 2 rows.')
+      showToast('This sheet appears to be empty or has less than 2 rows')
       return
     }
 

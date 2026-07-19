@@ -11,7 +11,11 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AmountInput } from '@/components/ui/amount-input'
 import { Select } from '@/components/ui/select'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useUndo } from '@/components/ui/undo-toast'
+import { useToast } from '@/components/ui/toast-notification'
 
 interface LendingRecord {
   id: string
@@ -21,7 +25,7 @@ interface LendingRecord {
   interestRate: number
   interestType: 'none' | 'simple' | 'compound'
   expectedRepaymentDate: string
-  status: 'active' | 'settled'
+  status: 'active' | 'paid'
   createdAt: string
   description?: string
 }
@@ -30,7 +34,10 @@ export function LendingDashboard() {
   const [filterType, setFilterType] = useState<'all' | 'lent' | 'borrowed'>('all')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showNewForm, setShowNewForm] = useState(false)
+  // Confirmation dialog state
+  const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'settle'; id: string; name: string } | null>(null)
 
+  const { showUndo } = useUndo()
   const lending = useLiveQuery(() => db.lending.toArray()) || []
 
   // Calculate interest accrued
@@ -89,18 +96,28 @@ export function LendingDashboard() {
   }, [filteredLending])
 
   const handleDelete = async (id: string) => {
+    const record = lending.find(l => l.id === id)
+    if (!record) return
     try {
       await db.lending.delete(id)
-    } catch (err) {
-      console.error('Error deleting lending record:', err)
+      showUndo(`${record.contactName} deleted`, async () => {
+        await db.lending.add(record)
+      })
+    } catch {
+      // Delete failed silently
     }
   }
 
   const handleMarkSettled = async (id: string) => {
+    const record = lending.find(l => l.id === id)
+    if (!record) return
     try {
       await db.lending.update(id, { status: 'paid' })
-    } catch (err) {
-      console.error('Error updating lending record:', err)
+      showUndo(`${record.contactName} marked as settled`, async () => {
+        await db.lending.update(id, { status: 'active' })
+      })
+    } catch {
+      // Update failed silently
     }
   }
 
@@ -284,8 +301,16 @@ export function LendingDashboard() {
 
                         <div className="flex items-center gap-1">
                           <button
-                            onClick={() => handleDelete(record.id)}
+                            onClick={() => setEditingId(record.id)}
+                            className="p-2 hover:bg-primary/10 rounded-lg transition-colors"
+                            aria-label="Edit lending record"
+                          >
+                            <Edit2 className="w-4 h-4 text-muted-foreground hover:text-primary" />
+                          </button>
+                          <button
+                            onClick={() => setConfirmAction({ type: 'delete', id: record.id, name: record.contactName })}
                             className="p-2 hover:bg-destructive/10 rounded-lg transition-colors"
+                            aria-label="Delete lending record"
                           >
                             <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
                           </button>
@@ -336,7 +361,7 @@ export function LendingDashboard() {
 
                         {isActive && (
                           <button
-                            onClick={() => handleMarkSettled(record.id)}
+                            onClick={() => setConfirmAction({ type: 'settle', id: record.id, name: record.contactName })}
                             className="px-3 py-1 bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold rounded-lg hover:bg-emerald-500/30 transition-colors"
                           >
                             Mark Settled
@@ -357,11 +382,45 @@ export function LendingDashboard() {
           </div>
         )}
       </motion.div>
+
+      {/* Edit Lending Form */}
+      <AnimatePresence>
+        {editingId && (
+          <EditLendingForm
+            recordId={editingId}
+            lending={lending}
+            onClose={() => setEditingId(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!confirmAction}
+        title={confirmAction?.type === 'delete' ? 'Delete Lending Record?' : 'Mark as Settled?'}
+        message={
+          confirmAction?.type === 'delete'
+            ? `Are you sure you want to delete the record for "${confirmAction.name}"? You can undo this action.`
+            : `Mark the record for "${confirmAction?.name}" as settled? You can undo this if done by mistake.`
+        }
+        confirmLabel={confirmAction?.type === 'delete' ? 'Delete' : 'Mark Settled'}
+        cancelLabel="Cancel"
+        variant={confirmAction?.type === 'delete' ? 'danger' : 'warning'}
+        onConfirm={() => {
+          if (confirmAction) {
+            if (confirmAction.type === 'delete') handleDelete(confirmAction.id)
+            else handleMarkSettled(confirmAction.id)
+          }
+          setConfirmAction(null)
+        }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   )
 }
 
 function NewLendingForm({ onClose }: { onClose: () => void }) {
+  const { showToast } = useToast()
   const [data, setData] = useState({
     contactName: '',
     type: 'lent' as 'lent' | 'borrowed',
@@ -374,7 +433,7 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = async () => {
     if (!data.contactName || !data.amount || !data.expectedRepaymentDate) {
-      alert('Please fill in all required fields')
+      showToast('Please fill in contact name, amount, and repayment date')
       return
     }
 
@@ -416,11 +475,10 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
           <option value="borrowed">Borrowed</option>
         </Select>
 
-        <Input
-          type="number"
+        <AmountInput
           placeholder="Amount"
-          value={data.amount}
-          onChange={(e) => setData({ ...data, amount: e.target.value })}
+          value={data.amount as string}
+          onChange={(val) => setData({ ...data, amount: val })}
           className="text-sm"
         />
       </div>
@@ -474,6 +532,133 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
           Cancel
         </Button>
       </div>
+    </motion.div>
+  )
+}
+
+
+function EditLendingForm({ recordId, lending, onClose }: { recordId: string; lending: any[]; onClose: () => void }) {
+  const record = lending.find((l: any) => l.id === recordId)
+  const [data, setData] = useState({
+    contactName: record?.contactName || '',
+    type: (record?.type || 'lent') as 'lent' | 'borrowed',
+    amount: record?.amount?.toString() || '',
+    interestRate: record?.interestRate?.toString() || '0',
+    interestType: (record?.interestType || 'none') as 'none' | 'simple' | 'compound',
+    expectedRepaymentDate: record?.expectedRepaymentDate || '',
+    description: record?.description || '',
+  })
+
+  if (!record) return null
+
+  const handleSave = async () => {
+    if (!data.contactName || !data.amount) return
+    try {
+      await db.lending.update(recordId, {
+        contactName: data.contactName,
+        type: data.type,
+        amount: parseFloat(data.amount) || 0,
+        interestRate: parseFloat(data.interestRate) || 0,
+        interestType: data.interestType,
+        expectedRepaymentDate: data.expectedRepaymentDate,
+        description: data.description,
+      })
+      onClose()
+    } catch {
+      // Save failed
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm bg-card border border-border/60 rounded-3xl p-5 shadow-2xl space-y-4"
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-foreground">Edit Lending Record</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <Input
+          placeholder="Contact name"
+          value={data.contactName}
+          onChange={(e) => setData({ ...data, contactName: e.target.value })}
+          className="text-sm"
+        />
+
+        <div className="grid grid-cols-2 gap-2">
+          <Select
+            value={data.type}
+            onChange={(e) => setData({ ...data, type: e.target.value as any })}
+          >
+            <option value="lent">Lent</option>
+            <option value="borrowed">Borrowed</option>
+          </Select>
+
+          <AmountInput
+            placeholder="Amount"
+            value={data.amount}
+            onChange={(val) => setData({ ...data, amount: val })}
+            className="text-sm"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            type="number"
+            placeholder="Interest Rate %"
+            value={data.interestRate}
+            onChange={(e) => setData({ ...data, interestRate: e.target.value })}
+            className="text-sm"
+          />
+
+          <Select
+            value={data.interestType}
+            onChange={(e) => setData({ ...data, interestType: e.target.value as any })}
+          >
+            <option value="none">No Interest</option>
+            <option value="simple">Simple</option>
+            <option value="compound">Compound</option>
+          </Select>
+        </div>
+
+        <Input
+          type="date"
+          value={data.expectedRepaymentDate}
+          onChange={(e) => setData({ ...data, expectedRepaymentDate: e.target.value })}
+          className="text-sm"
+          label="Expected Repayment Date"
+        />
+
+        <Input
+          placeholder="Notes (optional)"
+          value={data.description}
+          onChange={(e) => setData({ ...data, description: e.target.value })}
+          className="text-sm"
+        />
+
+        <div className="flex gap-2 pt-1">
+          <Button onClick={handleSave} className="flex-1 text-sm">
+            Save Changes
+          </Button>
+          <Button variant="outline" onClick={onClose} className="flex-1 text-sm">
+            Cancel
+          </Button>
+        </div>
+      </motion.div>
     </motion.div>
   )
 }

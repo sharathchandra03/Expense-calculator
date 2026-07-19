@@ -2,9 +2,10 @@
 
 import React, { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, Bill } from '@/db/schema'
+import { db, Bill, generateUUID } from '@/db/schema'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { AmountInput } from '@/components/ui/amount-input'
 import { Select } from '@/components/ui/select'
 import { CategorySelect } from '@/components/ui/category-select'
 import { Button } from '@/components/ui/button'
@@ -12,12 +13,18 @@ import { formatCurrency } from '@/lib/utils'
 import { Plus, Edit2, Trash2, CheckCircle2, Calendar, Tag, AlertCircle, X, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useToast } from '@/components/ui/toast-notification'
+import { useUndo } from '@/components/ui/undo-toast'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 export function BillsManager() {
   const [isAddingBill, setIsAddingBill] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'unpaid' | 'paid'>('all')
+  const { showToast } = useToast()
+  const { showUndo } = useUndo()
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id?: string; title?: string }>({ open: false })
 
   // Form state
   const [formData, setFormData] = useState({
@@ -49,7 +56,7 @@ export function BillsManager() {
   // Handle Add/Update
   const handleSave = async () => {
     if (!formData.title || formData.amount <= 0) {
-      alert('Please fill all required fields')
+      showToast('Please fill in the bill name and amount')
       return
     }
 
@@ -67,7 +74,7 @@ export function BillsManager() {
       } else {
         // Add new bill
         await db.bills.add({
-          id: Math.random().toString(36).substring(2),
+          id: generateUUID(),
           title: formData.title,
           amount: formData.amount,
           dueDate: formData.dueDate,
@@ -109,13 +116,25 @@ export function BillsManager() {
 
   // Handle Delete
   const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this bill?')) {
-      try {
-        await db.bills.delete(id)
-      } catch (err) {
-        console.error('Error deleting bill:', err)
+    const bill = safeBills.find(b => b.id === id)
+    setDeleteConfirm({ open: true, id, title: bill?.title || 'this bill' })
+  }
+
+  const handleConfirmDelete = async () => {
+    const id = deleteConfirm.id
+    if (!id) return
+    const bill = safeBills.find(b => b.id === id)
+    try {
+      await db.bills.delete(id)
+      if (bill) {
+        showUndo(`"${bill.title}" deleted`, async () => {
+          await db.bills.add(bill)
+        })
       }
+    } catch {
+      // Delete failed
     }
+    setDeleteConfirm({ open: false })
   }
 
   // Handle Toggle Paid
@@ -240,13 +259,11 @@ export function BillsManager() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-muted-foreground uppercase">Amount</label>
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  value={formData.amount || ''}
-                  onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
+                <AmountInput
+                  value={formData.amount ? formData.amount.toString() : ''}
+                  onChange={(val) => setFormData({ ...formData, amount: parseFloat(val) || 0 })}
+                  placeholder="0"
                   className="mt-2"
-                  step="0.01"
                 />
               </div>
               <div>
@@ -404,6 +421,17 @@ export function BillsManager() {
           Add New Bill
         </motion.button>
       )}
+
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Delete Bill?"
+        message={`Are you sure you want to delete "${deleteConfirm.title}"? You can undo this action.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false })}
+      />
     </div>
   )
 }

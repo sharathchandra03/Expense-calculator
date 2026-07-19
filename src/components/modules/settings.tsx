@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { SyncCard } from '@/components/ui/sync-card'
+import { invalidateCurrencyCache } from '@/lib/utils'
+import { useTheme } from '@/providers/ThemeProvider'
 import { 
   User, Mail, Globe, Palette, Download, Upload, Settings as SettingsIcon,
   Bell, Lock, Trash2, LogOut, ArrowRight, Check, X, ChevronRight,
@@ -23,7 +25,7 @@ interface UserProfile {
 export function Settings() {
   const [profile, setProfile] = useState<UserProfile>({ name: '', email: '' })
   const [currency, setCurrency] = useState('INR')
-  const [theme, setTheme] = useState('dark')
+  const { theme, setTheme: setProviderTheme } = useTheme()
   const [notifications, setNotifications] = useState(true)
   const [editing, setEditing] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
@@ -61,9 +63,7 @@ export function Settings() {
     }
     loadProfile()
 
-    const savedTheme = localStorage.getItem('finance-os-theme') || 'light'
     const savedNotifications = localStorage.getItem('finance-os-notifications') !== 'false'
-    setTheme(savedTheme)
     setNotifications(savedNotifications)
   }, [])
 
@@ -107,16 +107,13 @@ export function Settings() {
   const handleCurrencyChange = async (newCurrency: string) => {
     setCurrency(newCurrency)
     localStorage.setItem('finance-os-currency', newCurrency)
+    invalidateCurrencyCache()
     await saveProfile({ currency: newCurrency })
   }
 
   // Save theme
   const handleThemeChange = (newTheme: string) => {
-    setTheme(newTheme)
-    localStorage.setItem('finance-os-theme', newTheme)
-    // Apply theme via class on html element
-    document.documentElement.classList.remove('light', 'dark')
-    document.documentElement.classList.add(newTheme)
+    setProviderTheme(newTheme as 'dark' | 'light' | 'system' | 'auto')
   }
 
   // Toggle notifications
@@ -126,16 +123,31 @@ export function Settings() {
     localStorage.setItem('finance-os-notifications', String(newValue))
   }
 
-  // Export data as JSON
+  // Export data as JSON (full backup of all financial data)
   const handleExportData = async () => {
     setIsExporting(true)
     try {
+      const [transactions, accounts, assets, lending, bills, goals, budgets, investments, customCategories, subscriptions, debts, splits] = await Promise.all([
+        db.transactions.toArray(),
+        db.accounts.toArray(),
+        db.assets.toArray(),
+        db.lending.toArray(),
+        db.bills.toArray(),
+        db.goals.toArray(),
+        db.budgets.toArray(),
+        db.investments.toArray(),
+        db.customCategories.toArray(),
+        db.subscriptions.toArray(),
+        db.debts.toArray(),
+        db.splits.toArray(),
+      ])
+
       const allData = {
-        profile,
-        currency,
-        theme,
-        notifications,
         exportedAt: new Date().toISOString(),
+        version: '1.0',
+        profile,
+        preferences: { currency, theme, notifications },
+        data: { transactions, accounts, assets, lending, bills, goals, budgets, investments, customCategories, subscriptions, debts, splits },
       }
 
       const dataStr = JSON.stringify(allData, null, 2)
@@ -146,8 +158,8 @@ export function Settings() {
       link.download = `pennyflow-backup-${new Date().toISOString().split('T')[0]}.json`
       link.click()
       URL.revokeObjectURL(url)
-    } catch (err) {
-      console.error('Export failed:', err)
+    } catch {
+      // Export failed silently
     } finally {
       setIsExporting(false)
     }
@@ -197,7 +209,7 @@ export function Settings() {
     localStorage.clear()
     setProfile({ name: '', email: '' })
     setCurrency('INR')
-    setTheme('dark')
+    setProviderTheme('dark')
     setNotifications(true)
     setShowResetConfirm(false)
     setSaveSuccess(true)

@@ -9,6 +9,7 @@ import { Plus, Tag, Trash2, Edit2, X, ArrowDownRight, ArrowUpRight } from 'lucid
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useToast } from '@/components/ui/toast-notification'
 
 const COLOR_OPTIONS = [
   '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -36,6 +37,7 @@ export function CustomCategories() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [hiddenDefaults, setHiddenDefaults] = useState<string[]>(getHiddenDefaults)
   const [confirmState, setConfirmState] = useState<{ open: boolean; id?: string; name?: string; isDefault?: boolean }>({ open: false })
+  const { showToast } = useToast()
   const [formData, setFormData] = useState<{
     name: string
     type: 'income' | 'expense'
@@ -78,7 +80,7 @@ export function CustomCategories() {
       (c) => c.name.toLowerCase() === name.toLowerCase() && c.type === formData.type && c.id !== editingId
     )
     if (duplicate) {
-      alert('A category with that name already exists.')
+      showToast('A category with that name already exists')
       return
     }
 

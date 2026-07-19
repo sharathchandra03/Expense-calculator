@@ -10,6 +10,7 @@ import { Plus, Trash2, Edit2, X, ArrowLeftRight, Wallet, Landmark, CreditCard, T
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useToast } from '@/components/ui/toast-notification'
 
 type AccountType = 'cash' | 'bank' | 'card' | 'investment' | 'crypto' | string
 
@@ -56,6 +57,7 @@ export function AccountManager() {
   const [historyId, setHistoryId] = useState<string | null>(null)
   const [customTypes, setCustomTypes] = useState(getCustomAccountTypes)
   const [hiddenTypes, setHiddenTypes] = useState(getHiddenAccountTypes)
+  const { showToast } = useToast()
   const [addingType, setAddingType] = useState(false)
   const [newTypeName, setNewTypeName] = useState('')
   const [typeConfirm, setTypeConfirm] = useState<{ open: boolean; key?: string; label?: string }>({ open: false })
@@ -196,14 +198,14 @@ export function AccountManager() {
   const handleTransfer = async () => {
     const amount = Number(transfer.amount)
     if (!transfer.from || !transfer.to || transfer.from === transfer.to || amount <= 0) {
-      alert('Pick two different accounts and a valid amount.')
+      showToast('Pick two different accounts and enter a valid amount')
       return
     }
     const fromAcc = safeAccounts.find((a) => a.id === transfer.from)
     const toAcc = safeAccounts.find((a) => a.id === transfer.to)
     if (!fromAcc || !toAcc) return
     if (fromAcc.balance < amount) {
-      alert('Insufficient balance in the source account.')
+      showToast('Insufficient balance in the source account')
       return
     }
 

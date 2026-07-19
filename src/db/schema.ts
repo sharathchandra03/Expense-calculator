@@ -266,6 +266,21 @@ class PennyFlowDatabase extends Dexie {
   constructor() {
     super('PennyFlowDatabase');
 
+    /**
+     * CRITICAL: DATABASE VERSIONING RULES
+     * ====================================
+     * 1. NEVER delete or modify existing version declarations
+     * 2. NEVER change the database name ('PennyFlowDatabase')
+     * 3. To add new tables: create a NEW version (increment number)
+     *    and include ALL existing tables plus the new one
+     * 4. To add new indexes: create a NEW version with the updated index list
+     * 5. NEVER remove a table from the stores declaration (it deletes all data in that table)
+     * 6. Upgrade functions must be non-destructive (additive only)
+     * 7. Test schema changes locally FIRST before deploying
+     *
+     * Violating these rules WILL cause user data loss in production.
+     */
+
     // Version 6 — preserve existing data (DO NOT remove or modify)
     this.version(6).stores({
       transactions: 'id, date, type, category, accountId',
@@ -342,11 +357,23 @@ export function generateUUID(): string {
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
 
-// Helper to initialize database (no seed data - fresh start for real user data)
+/**
+ * Initialize database on app start.
+ * SAFETY: This function NEVER deletes, clears, or overwrites existing data.
+ * It only acts on a truly fresh/empty database (brand new install).
+ */
 export async function seedDatabaseIfEmpty() {
-  const accountCount = await db.accounts.count();
-  if (accountCount > 0) {
-    // Still check if profile needs migration
+  // Check multiple tables to determine if user has ANY existing data
+  const accountCount = await db.accounts.count()
+  const transactionCount = await db.transactions.count()
+  const goalsCount = await db.goals.count()
+  const billsCount = await db.bills.count()
+
+  const hasAnyData = accountCount > 0 || transactionCount > 0 || goalsCount > 0 || billsCount > 0
+
+  if (hasAnyData) {
+    // User has existing data — only do non-destructive migrations
+    // Migrate profile from localStorage to DB if not already there
     const profileCount = await db.userProfile.count()
     if (profileCount === 0) {
       const savedProfile = localStorage.getItem('finance-os-profile')
@@ -365,16 +392,17 @@ export async function seedDatabaseIfEmpty() {
         } catch {}
       }
     }
-    return;
+    return // Exit — never touch existing data
   }
 
+  // Truly empty database (brand new install / first time user)
   // Just log a welcome entry so the timeline isn't completely empty
   await db.systemLogs.add({
     id: generateUUID(),
     timestamp: new Date().toISOString(),
     type: 'system',
     description: 'Welcome to PennyFlow. Your local database is ready.',
-  });
+  })
 }
 
 // === Profile helpers (stored in DB for persistence) ===

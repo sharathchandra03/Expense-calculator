@@ -5,6 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, Budget, generateUUID } from '@/db/schema'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { AmountInput } from '@/components/ui/amount-input'
 import { Select } from '@/components/ui/select'
 import { CategorySelect } from '@/components/ui/category-select'
 import { Button } from '@/components/ui/button'
@@ -13,10 +14,16 @@ import { Plus, Edit2, Trash2, AlertCircle, TrendingUp, X, Check } from 'lucide-r
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { BudgetManagementService } from '@/services/BudgetManagementService'
+import { useToast } from '@/components/ui/toast-notification'
+import { useUndo } from '@/components/ui/undo-toast'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 export function BudgetManager() {
   const [isAddingBudget, setIsAddingBudget] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const { showToast } = useToast()
+  const { showUndo } = useUndo()
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id?: string; name?: string }>({ open: false })
   const [formData, setFormData] = useState<{
     name: string
     category: string
@@ -47,7 +54,7 @@ export function BudgetManager() {
 
   const handleSave = async () => {
     if (!formData.name || !formData.category || formData.limit <= 0) {
-      alert('Please fill all required fields')
+      showToast('Please fill in budget name, category, and a limit amount')
       return
     }
 
@@ -101,9 +108,21 @@ export function BudgetManager() {
   }
 
   const handleDelete = async (id: string) => {
-    if (confirm('Delete this budget?')) {
-      await db.budgets.delete(id)
+    const budget = safeBudgets.find(b => b.id === id)
+    setDeleteConfirm({ open: true, id, name: budget?.name || 'this budget' })
+  }
+
+  const handleConfirmDelete = async () => {
+    const id = deleteConfirm.id
+    if (!id) return
+    const budget = safeBudgets.find(b => b.id === id)
+    await db.budgets.delete(id)
+    if (budget) {
+      showUndo(`"${budget.name}" deleted`, async () => {
+        await db.budgets.add(budget)
+      })
     }
+    setDeleteConfirm({ open: false })
   }
 
   const handleCancel = () => {
@@ -217,13 +236,11 @@ export function BudgetManager() {
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground uppercase">Limit</label>
-                <Input
-                  type="number"
-                  placeholder="5000"
-                  value={formData.limit || ''}
-                  onChange={(e) => setFormData({ ...formData, limit: parseFloat(e.target.value) || 0 })}
+                <AmountInput
+                  placeholder="5,000"
+                  value={formData.limit ? formData.limit.toString() : ''}
+                  onChange={(val) => setFormData({ ...formData, limit: parseFloat(val) || 0 })}
                   className="mt-2"
-                  step="100"
                 />
               </div>
             </div>
@@ -358,6 +375,17 @@ export function BudgetManager() {
           Add New Budget
         </motion.button>
       )}
+
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Delete Budget?"
+        message={`Are you sure you want to delete "${deleteConfirm.name}"? You can undo this action.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false })}
+      />
     </div>
   )
 }

@@ -173,6 +173,6 @@
 }
 .dark .glass-effect { background: rgba(10, 10, 15, 0.92); }
 
-/* Subtle press feedback */
-button:active, [role="button"]:active { transform: scale(0.975); }
+/* Subtle press feedback — only for elements without explicit framer-motion whileTap */
+button:not([data-framer-motion]):active, [role="button"]:not([data-framer-motion]):active { transform: scale(0.975); }
 button, a, [role="button"] { transition: transform .14s ease, opacity .2s ease, background-color .2s ease, color .2s ease; }

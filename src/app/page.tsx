@@ -1,34 +1,37 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { seedDatabaseIfEmpty } from '@/db/schema'
 import { BottomNav, TabType } from '@/components/layout/bottom-nav'
 import { Dashboard } from '@/components/modules/dashboard'
-import { TransactionsLedger } from '@/components/modules/transactions-ledger'
-import { AssetsTracker } from '@/components/modules/assets-tracker'
-import { Settings } from '@/components/modules/settings'
-import { LendingDashboard } from '@/components/modules/lending-dashboard'
-import { GlobalSearch } from '@/components/modules/global-search'
-import { Onboarding } from '@/components/modules/onboarding'
-import { QuickAddModal } from '@/components/modules/quick-add-modal'
-import { BillsManager } from '@/components/modules/bills-manager'
-import { BudgetManager } from '@/components/modules/budget-manager'
-import { FinancialReports } from '@/components/modules/financial-reports'
-import { NotificationsCenter } from '@/components/modules/notifications-center'
-import { GoalsDashboard } from '@/components/modules/goals-dashboard'
-import { InvestmentTracker } from '@/components/modules/investment-tracker'
-import { CustomCategories } from '@/components/modules/custom-categories'
-import { AccountManager } from '@/components/modules/account-manager'
-import { Analytics } from '@/components/modules/analytics'
-import { SplitExpenses } from '@/components/modules/split-expenses'
-import { DebtPlanner } from '@/components/modules/debt-planner'
-import { ReceiptGallery } from '@/components/modules/receipt-gallery'
 import { RecurringTransactionService } from '@/services/RecurringTransactionService'
-import { SubscriptionTracker } from '@/components/modules/subscriptions'
-import { CSVImport } from '@/components/modules/csv-import'
-import { AboutApp } from '@/components/modules/about-app'
 import { AnimatePresence, motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
+
+// Code-split all secondary modules (loaded on demand)
+const TransactionsLedger = dynamic(() => import('@/components/modules/transactions-ledger').then(m => ({ default: m.TransactionsLedger })), { ssr: false })
+const AssetsTracker = dynamic(() => import('@/components/modules/assets-tracker').then(m => ({ default: m.AssetsTracker })), { ssr: false })
+const Settings = dynamic(() => import('@/components/modules/settings').then(m => ({ default: m.Settings })), { ssr: false })
+const LendingDashboard = dynamic(() => import('@/components/modules/lending-dashboard').then(m => ({ default: m.LendingDashboard })), { ssr: false })
+const GlobalSearch = dynamic(() => import('@/components/modules/global-search').then(m => ({ default: m.GlobalSearch })), { ssr: false })
+const Onboarding = dynamic(() => import('@/components/modules/onboarding').then(m => ({ default: m.Onboarding })), { ssr: false })
+const QuickAddModal = dynamic(() => import('@/components/modules/quick-add-modal').then(m => ({ default: m.QuickAddModal })), { ssr: false })
+const BillsManager = dynamic(() => import('@/components/modules/bills-manager').then(m => ({ default: m.BillsManager })), { ssr: false })
+const BudgetManager = dynamic(() => import('@/components/modules/budget-manager').then(m => ({ default: m.BudgetManager })), { ssr: false })
+const FinancialReports = dynamic(() => import('@/components/modules/financial-reports').then(m => ({ default: m.FinancialReports })), { ssr: false })
+const NotificationsCenter = dynamic(() => import('@/components/modules/notifications-center').then(m => ({ default: m.NotificationsCenter })), { ssr: false })
+const GoalsDashboard = dynamic(() => import('@/components/modules/goals-dashboard').then(m => ({ default: m.GoalsDashboard })), { ssr: false })
+const InvestmentTracker = dynamic(() => import('@/components/modules/investment-tracker').then(m => ({ default: m.InvestmentTracker })), { ssr: false })
+const CustomCategories = dynamic(() => import('@/components/modules/custom-categories').then(m => ({ default: m.CustomCategories })), { ssr: false })
+const AccountManager = dynamic(() => import('@/components/modules/account-manager').then(m => ({ default: m.AccountManager })), { ssr: false })
+const Analytics = dynamic(() => import('@/components/modules/analytics').then(m => ({ default: m.Analytics })), { ssr: false })
+const SplitExpenses = dynamic(() => import('@/components/modules/split-expenses').then(m => ({ default: m.SplitExpenses })), { ssr: false })
+const DebtPlanner = dynamic(() => import('@/components/modules/debt-planner').then(m => ({ default: m.DebtPlanner })), { ssr: false })
+const ReceiptGallery = dynamic(() => import('@/components/modules/receipt-gallery').then(m => ({ default: m.ReceiptGallery })), { ssr: false })
+const SubscriptionTracker = dynamic(() => import('@/components/modules/subscriptions').then(m => ({ default: m.SubscriptionTracker })), { ssr: false })
+const CSVImport = dynamic(() => import('@/components/modules/csv-import').then(m => ({ default: m.CSVImport })), { ssr: false })
+const AboutApp = dynamic(() => import('@/components/modules/about-app').then(m => ({ default: m.AboutApp })), { ssr: false })
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard')
@@ -68,29 +71,14 @@ export default function Home() {
 
   // Seed database on mount
   useEffect(() => {
-    // Clear old service worker caches and force fresh load
-    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        registrations.forEach((reg) => reg.unregister())
-      })
-      if ('caches' in window) {
-        caches.keys().then((keys) => keys.forEach((key) => caches.delete(key)))
-      }
-    }
-
     async function initDB() {
       try {
         await seedDatabaseIfEmpty()
         setDbReady(true)
 
-        // Phase 1.1: Process recurring transactions on app load
-        RecurringTransactionService.processRecurrences().then(count => {
-          if (count > 0) {
-            console.log(`[PennyFlow] Auto-logged ${count} recurring transaction(s)`)
-          }
-        }).catch(err => console.error('Recurring transaction check failed:', err))
-      } catch (err) {
-        console.error('Failed to initialize database:', err)
+        // Process recurring transactions on app load
+        RecurringTransactionService.processRecurrences().catch(() => {})
+      } catch {
         setDbReady(true) // continue anyway
       }
     }
@@ -114,11 +102,7 @@ export default function Home() {
 
     // Register Service Worker for PWA in production only
     if (process.env.NODE_ENV === 'production' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').then((reg) => {
-        console.log('[PennyFlow] Service worker registered')
-      }).catch((err) => {
-        console.error('[PennyFlow] SW registration failed:', err)
-      })
+      navigator.serviceWorker.register('/sw.js').catch(() => {})
     }
 
     // Global keyboard shortcut for search (Cmd+K or Ctrl+K)
@@ -134,7 +118,7 @@ export default function Home() {
 
   if (!dbReady) {
     return (
-      <div className="flex flex-1 items-center justify-center bg-white text-foreground">
+      <div className="flex flex-1 items-center justify-center bg-background text-foreground">
         <div className="flex flex-col items-center space-y-4">
           <div className="w-8 h-8 rounded-full border-4 border-t-[#6d5efc] border-r-transparent border-b-transparent border-l-transparent animate-spin" />
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
@@ -212,7 +196,7 @@ export default function Home() {
   const isDashboard = activeTab === 'dashboard'
 
   return (
-    <div className="min-h-screen bg-[#e8e8ec] flex items-center justify-center p-0 md:p-6">
+    <div className="min-h-screen bg-[#e8e8ec] dark:bg-[#050505] flex items-center justify-center p-0 md:p-6">
       {/* Desktop phone frame / Mobile fullbleed */}
       <div className="w-full h-[100dvh] md:h-[860px] md:max-w-[400px] md:rounded-[2.5rem] bg-background text-foreground md:shadow-elevated overflow-hidden relative flex flex-col">
 

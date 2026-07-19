@@ -8,12 +8,16 @@ import { Input } from '@/components/ui/input'
 import { formatCurrency } from '@/lib/utils'
 import { Plus, Target, Zap, Trash2, X, Check, Flag } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useUndo } from '@/components/ui/undo-toast'
 
 export function GoalsDashboard() {
   const [isAdding, setIsAdding] = useState(false)
   const [formData, setFormData] = useState({
     title: '', targetAmount: 0, targetDate: '', category: 'General'
   })
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id?: string; title?: string }>({ open: false })
+  const { showUndo } = useUndo()
 
   const goals = useLiveQuery(() => db.goals.toArray()) ?? []
   const safeGoals = Array.isArray(goals) ? goals : []
@@ -44,7 +48,21 @@ export function GoalsDashboard() {
   }
 
   const handleDelete = async (id: string) => {
-    if (confirm('Delete this goal?')) await db.goals.delete(id)
+    const goal = safeGoals.find(g => g.id === id)
+    setDeleteConfirm({ open: true, id, title: goal?.title || 'this goal' })
+  }
+
+  const handleConfirmDelete = async () => {
+    const id = deleteConfirm.id
+    if (!id) return
+    const goal = safeGoals.find(g => g.id === id)
+    await db.goals.delete(id)
+    if (goal) {
+      showUndo(`"${goal.title}" deleted`, async () => {
+        await db.goals.add(goal)
+      })
+    }
+    setDeleteConfirm({ open: false })
   }
 
   return (
@@ -114,13 +132,13 @@ export function GoalsDashboard() {
                         onClick={() => handleUpdateProgress(goal.id, Math.min(remaining, 1000))}
                         className="flex-1 h-8 rounded-lg bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20"
                       >
-                        +₹1K
+                        +1K
                       </button>
                       <button
                         onClick={() => handleUpdateProgress(goal.id, Math.min(remaining, 5000))}
                         className="flex-1 h-8 rounded-lg bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20"
                       >
-                        +₹5K
+                        +5K
                       </button>
                     </>
                   )}
@@ -170,6 +188,17 @@ export function GoalsDashboard() {
           </div>
         </motion.div>
       )}
+
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Delete Goal?"
+        message={`Are you sure you want to delete "${deleteConfirm.title}"? You can undo this action.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false })}
+      />
     </div>
   )
 }

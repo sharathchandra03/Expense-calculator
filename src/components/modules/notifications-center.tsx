@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/schema'
 import { Card, CardContent } from '@/components/ui/card'
@@ -10,8 +10,10 @@ import { Bell, Trash2, CheckCircle2, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { NotificationService } from '@/services/NotificationService'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 export function NotificationsCenter() {
+  const [clearConfirm, setClearConfirm] = useState(false)
   const notifications = useLiveQuery(() => db.notifications.orderBy('timestamp').reverse().toArray()) ?? []
   const safeNotifications = Array.isArray(notifications) ? notifications : []
 
@@ -37,9 +39,12 @@ export function NotificationsCenter() {
   }
 
   const handleDeleteAll = async () => {
-    if (confirm('Clear all notifications?')) {
-      await Promise.all(safeNotifications.map(n => db.notifications.delete(n.id)))
-    }
+    setClearConfirm(true)
+  }
+
+  const handleConfirmDeleteAll = async () => {
+    await Promise.all(safeNotifications.map(n => db.notifications.delete(n.id)))
+    setClearConfirm(false)
   }
 
   const getNotificationIcon = (type: string) => {
@@ -147,6 +152,17 @@ export function NotificationsCenter() {
           <p className="text-[10px] text-muted-foreground/75 mt-1">Your notifications will appear here</p>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={clearConfirm}
+        title="Clear All Notifications?"
+        message="This will remove all notifications. This cannot be undone."
+        confirmLabel="Clear All"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleConfirmDeleteAll}
+        onCancel={() => setClearConfirm(false)}
+      />
     </div>
   )
 }

@@ -26,7 +26,6 @@ export function SyncCard({ compact = false }: { compact?: boolean }) {
   }, [compact, loading])
 
   const handleSignOut = async () => {
-    if (user) await SyncService.pushToCloud(user.id)
     await signOut()
   }
 

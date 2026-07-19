@@ -10,6 +10,8 @@ import { formatCurrency } from '@/lib/utils'
 import { Plus, TrendingUp, BarChart3, Trash2, Edit2, X, Check } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { InvestmentTrackingService } from '@/services/InvestmentTrackingService'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useUndo } from '@/components/ui/undo-toast'
 
 export function InvestmentTracker() {
   const [isAdding, setIsAdding] = useState(false)
@@ -17,6 +19,8 @@ export function InvestmentTracker() {
   const [formData, setFormData] = useState({
     name: '', type: 'stock' as const, quantity: 0, buyPrice: 0, currentPrice: 0
   })
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id?: string; name?: string }>({ open: false })
+  const { showUndo } = useUndo()
 
   const investments = useLiveQuery(() => db.investments.toArray()) ?? []
   const safeInvestments = Array.isArray(investments) ? investments : []
@@ -47,7 +51,21 @@ export function InvestmentTracker() {
   }
 
   const handleDelete = async (id: string) => {
-    if (confirm('Delete this investment?')) await db.investments.delete(id)
+    const inv = safeInvestments.find(i => i.id === id)
+    setDeleteConfirm({ open: true, id, name: inv?.name || 'this investment' })
+  }
+
+  const handleConfirmDelete = async () => {
+    const id = deleteConfirm.id
+    if (!id) return
+    const inv = safeInvestments.find(i => i.id === id)
+    await db.investments.delete(id)
+    if (inv) {
+      showUndo(`"${inv.name}" deleted`, async () => {
+        await db.investments.add(inv)
+      })
+    }
+    setDeleteConfirm({ open: false })
   }
 
   return (
@@ -146,6 +164,17 @@ export function InvestmentTracker() {
           </div>
         </motion.div>
       )}
+
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Delete Investment?"
+        message={`Are you sure you want to delete "${deleteConfirm.name}"? You can undo this action.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false })}
+      />
     </div>
   )
 }

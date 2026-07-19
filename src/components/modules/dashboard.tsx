@@ -196,7 +196,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
       console.error('Quick-add failed:', err)
       setQuickAddSaving(false)
     }
-  }, [quickAddCategory, quickAddAmount, safeAccounts, todayStr])
+  }, [quickAddCategory, quickAddAmount, quickAddDate, safeAccounts, todayStr])
 
   // Focus input when quick-add category opens
   useEffect(() => {
@@ -550,11 +550,15 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[15px] text-muted-foreground font-medium">₹</span>
                     <input
                       ref={quickAddInputRef}
-                      type="number"
-                      inputMode="numeric"
+                      type="text"
+                      inputMode="decimal"
                       placeholder="0"
                       value={quickAddAmount}
-                      onChange={(e) => setQuickAddAmount(e.target.value)}
+                      onChange={(e) => {
+                        // Allow only digits, commas, and one decimal point
+                        const raw = e.target.value.replace(/[^0-9.]/g, '')
+                        setQuickAddAmount(raw)
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') handleQuickAddSave()
                         if (e.key === 'Escape') setQuickAddCategory(null)
@@ -654,7 +658,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
               onClick={() => onNavigateToTab('ledger')}
               className="w-full mt-4 py-3 rounded-2xl bg-secondary text-[13px] font-semibold text-foreground hover:bg-secondary/70 transition-colors"
             >
-              See all transaction
+              See all transactions
             </button>
           </div>
         ) : (

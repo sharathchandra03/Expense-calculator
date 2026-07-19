@@ -5,6 +5,7 @@
  */
 
 import { Transaction, Budget } from '@/db/schema'
+import { formatCurrency } from '@/lib/utils'
 
 export interface Insight {
   id: string
@@ -101,7 +102,7 @@ export class SmartInsightsService {
           id: `unusual-${tx.id}`,
           type: 'unusual',
           title: 'Unusual expense',
-          message: `"${tx.description}" (₹${tx.amount.toLocaleString()}) is ${Math.round(tx.amount / median)}x your typical ${cat} expense`,
+          message: `"${tx.description}" (${formatCurrency(tx.amount)}) is ${Math.round(tx.amount / median)}x your typical ${cat} expense`,
           severity: 'warning',
           category: cat,
           amount: tx.amount,
@@ -122,7 +123,7 @@ export class SmartInsightsService {
         id: `suggest-budget-${top.cat}`,
         type: 'suggestion',
         title: 'Budget suggestion',
-        message: `You spend ₹${top.total.toLocaleString()}/mo on ${top.cat}. Consider setting a budget to track it`,
+        message: `You spend ${formatCurrency(top.total)}/mo on ${top.cat}. Consider setting a budget to track it`,
         severity: 'info',
         category: top.cat,
         amount: top.total,
@@ -139,7 +140,7 @@ export class SmartInsightsService {
         id: 'positive-savings',
         type: 'positive',
         title: 'Great progress!',
-        message: `You're spending ₹${saved.toLocaleString()} less this month compared to last month`,
+        message: `You're spending ${formatCurrency(saved)} less this month compared to last month`,
         severity: 'positive',
         amount: saved,
       })

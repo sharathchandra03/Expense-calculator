@@ -86,7 +86,7 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
   return (
     <>
       {/* Bottom Navigation Bar — 4 tabs + center FAB */}
-      <div className="absolute bottom-0 left-0 right-0 z-30 bg-card border-t border-border/60 safe-bottom">
+      <nav className="absolute bottom-0 left-0 right-0 z-30 bg-card border-t border-border/60 safe-bottom" aria-label="Main navigation">
         <div className="flex items-center justify-between h-[72px] px-4">
           {leftTabs.map(renderTab)}
 
@@ -105,12 +105,13 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
           <button
             onClick={() => setIsOpen(true)}
             className="flex flex-col items-center justify-center gap-0.5 w-16 h-full"
+            aria-label="Open navigation menu"
           >
             <User className="h-[22px] w-[22px] text-muted-foreground" strokeWidth={1.7} />
             <span className="text-[10px] font-medium text-muted-foreground">Profile</span>
           </button>
         </div>
-      </div>
+      </nav>
 
       {/* Backdrop overlay */}
       <AnimatePresence>
@@ -135,6 +136,8 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 280 }}
             className="absolute inset-y-0 right-0 z-50 flex w-[82%] max-w-[300px] flex-col bg-background"
+            aria-label="App menu"
+            role="dialog"
           >
             {/* Sidebar header */}
             <div className="flex items-center justify-between px-5 h-16 border-b border-border/50">

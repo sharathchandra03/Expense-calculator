@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/providers/ThemeProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { AutoSyncProvider } from "@/providers/AutoSyncProvider";
 import { UndoProvider } from "@/components/ui/undo-toast";
+import { ToastProvider } from "@/components/ui/toast-notification";
 import { AppLockProvider } from "@/providers/AppLockProvider";
 import "./globals.css";
 
@@ -57,7 +58,9 @@ export default function RootLayout({
             <AutoSyncProvider>
               <AppLockProvider>
                 <UndoProvider>
-                  {children}
+                  <ToastProvider>
+                    {children}
+                  </ToastProvider>
                 </UndoProvider>
               </AppLockProvider>
             </AutoSyncProvider>
