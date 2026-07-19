@@ -398,7 +398,7 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
               key="success"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="flex flex-col items-center justify-center py-16 px-6 space-y-3"
+              className="flex flex-col items-center justify-center py-10 px-6 space-y-3"
             >
               <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center">
                 <Check className="w-5 h-5 text-emerald-500" />

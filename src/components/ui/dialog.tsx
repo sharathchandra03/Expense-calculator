@@ -40,14 +40,14 @@ const DialogContent = React.forwardRef<
         asChild
         {...props}
       >
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
             transition={{ type: "spring", damping: 25, stiffness: 350 }}
             className={cn(
-              "relative z-50 grid w-full max-w-lg gap-5 border border-border/80 bg-card p-6 shadow-xl rounded-3xl md:max-w-md focus:outline-none",
+              "relative z-50 grid w-full max-w-lg gap-5 border border-border/80 bg-card p-6 shadow-xl rounded-t-3xl sm:rounded-3xl md:max-w-md focus:outline-none",
               className
             )}
           >

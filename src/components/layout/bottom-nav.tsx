@@ -1,11 +1,11 @@
 'use client'
 
 import React, { useState } from 'react'
-import { LayoutDashboard, Wallet, TrendingUp, Landmark, Settings, Plus, Heart, Calendar, BarChart3, Bell, Target, TrendingDown, X, Tag, CreditCard, Users, Camera, Upload, Home, Clock, User, RefreshCw } from 'lucide-react'
+import { LayoutDashboard, Wallet, TrendingUp, Landmark, Settings, Plus, Heart, Calendar, BarChart3, Bell, Target, TrendingDown, X, Tag, CreditCard, Users, Camera, Upload, Home, Clock, User, RefreshCw, HelpCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 
-export type TabType = 'dashboard' | 'ledger' | 'accounts' | 'analytics' | 'budgets' | 'bills' | 'subscriptions' | 'goals' | 'debtplanner' | 'categories' | 'receipts' | 'splits' | 'investments' | 'lending' | 'assets' | 'reports' | 'notifications' | 'csvimport' | 'settings' | 'about';
+export type TabType = 'dashboard' | 'ledger' | 'accounts' | 'analytics' | 'budgets' | 'bills' | 'subscriptions' | 'goals' | 'debtplanner' | 'categories' | 'receipts' | 'splits' | 'investments' | 'lending' | 'assets' | 'reports' | 'notifications' | 'csvimport' | 'settings' | 'about' | 'support';
 
 interface BottomNavProps {
   activeTab: TabType;
@@ -42,6 +42,7 @@ const DEFAULT_NAV_ITEMS: NavItem[] = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   // App
   { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'support', label: 'Help & Support', icon: HelpCircle },
   { id: 'about', label: 'About PennyFlow', icon: Heart },
 ]
 

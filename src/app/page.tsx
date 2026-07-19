@@ -32,6 +32,7 @@ const ReceiptGallery = dynamic(() => import('@/components/modules/receipt-galler
 const SubscriptionTracker = dynamic(() => import('@/components/modules/subscriptions').then(m => ({ default: m.SubscriptionTracker })), { ssr: false })
 const CSVImport = dynamic(() => import('@/components/modules/csv-import').then(m => ({ default: m.CSVImport })), { ssr: false })
 const AboutApp = dynamic(() => import('@/components/modules/about-app').then(m => ({ default: m.AboutApp })), { ssr: false })
+const HelpSupport = dynamic(() => import('@/components/modules/help-support').then(m => ({ default: m.HelpSupport })), { ssr: false })
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard')
@@ -173,6 +174,8 @@ export default function Home() {
           return <Settings key="settings" />
         case 'about':
           return <AboutApp key="about" />
+        case 'support':
+          return <HelpSupport key="support" />
         default:
           return <Dashboard key="dashboard" onNavigateToTab={(tab) => handleTabChange(tab)} />
       }

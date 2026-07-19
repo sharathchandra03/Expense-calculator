@@ -242,6 +242,74 @@ export interface UserProfile {
   updatedAt: string;
 }
 
+// Help & Support Ticket
+export type SupportTicketCategory = 'bug' | 'issue' | 'feature_request' | 'question' | 'feedback';
+export type SupportTicketStatus = 'open' | 'in_review' | 'investigating' | 'resolved' | 'closed';
+export type SupportTicketPriority = 'low' | 'medium' | 'high' | 'critical';
+
+export interface SupportTicketAttachment {
+  id: string;
+  name: string;
+  type: string; // MIME type
+  size: number;
+  data: string; // base64
+  thumbnail?: string; // base64 thumbnail for images
+}
+
+export interface SupportTicketDiagnostics {
+  appVersion: string;
+  platform: string;
+  deviceType: string;
+  os: string;
+  osVersion: string;
+  screenSize: string;
+  theme: string;
+  language: string;
+  timezone: string;
+  timestamp: string;
+  internetStatus: 'online' | 'offline';
+  userId?: string;
+  sessionId: string;
+}
+
+export interface SupportTicket {
+  id: string; // Ticket ID (e.g., PF-XXXXX)
+  userId?: string;
+  guestId?: string;
+  category: SupportTicketCategory;
+  subject: string;
+  description: string;
+  // Bug report fields
+  stepsToReproduce?: string;
+  expectedBehaviour?: string;
+  actualBehaviour?: string;
+  // Feature request fields
+  problemToSolve?: string;
+  suggestion?: string;
+  // Feedback fields
+  rating?: number; // 1-5
+  // Attachments
+  attachments: SupportTicketAttachment[];
+  // Diagnostics (auto-collected)
+  diagnostics: SupportTicketDiagnostics;
+  // Metadata
+  priority: SupportTicketPriority;
+  status: SupportTicketStatus;
+  assignedTo?: string;
+  // Timestamps
+  createdAt: string;
+  updatedAt: string;
+  // Offline support
+  syncStatus: 'pending' | 'synced' | 'failed';
+  // Future: messaging thread
+  messages?: Array<{
+    id: string;
+    sender: 'user' | 'support';
+    message: string;
+    timestamp: string;
+  }>;
+}
+
 class PennyFlowDatabase extends Dexie {
   transactions!: Table<Transaction, string>;
   lending!: Table<Lending, string>;
@@ -262,6 +330,7 @@ class PennyFlowDatabase extends Dexie {
   sharedWallets!: Table<SharedWallet, string>;
   debts!: Table<DebtRecord, string>;
   userProfile!: Table<UserProfile, string>;
+  supportTickets!: Table<SupportTicket, string>;
 
   constructor() {
     super('PennyFlowDatabase');
@@ -343,6 +412,30 @@ class PennyFlowDatabase extends Dexie {
           } catch {}
         }
       }
+    });
+
+    // Version 8 — add supportTickets table (non-destructive upgrade)
+    this.version(8).stores({
+      transactions: 'id, date, type, category, accountId',
+      lending: 'id, contactName, type, status, createdAt',
+      assets: 'id, name, type',
+      bills: 'id, title, dueDate, isPaid',
+      goals: 'id, title, targetDate',
+      accounts: 'id, name, type',
+      systemLogs: 'id, timestamp, type',
+      budgets: 'id, category, period',
+      customCategories: 'id, name, type',
+      tags: 'id, name',
+      investments: 'id, name, symbol, accountId',
+      notifications: 'id, type, timestamp',
+      financialBriefs: 'id, period, startDate',
+      templates: 'id, name, category, type',
+      splits: 'id, transactionId, createdAt',
+      subscriptions: 'id, name, cycle, isActive',
+      sharedWallets: 'id, name, inviteCode',
+      debts: 'id, name, createdAt',
+      userProfile: 'id',
+      supportTickets: 'id, category, status, priority, createdAt, syncStatus',
     });
   }
 }

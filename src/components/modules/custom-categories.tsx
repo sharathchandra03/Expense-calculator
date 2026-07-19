@@ -143,46 +143,38 @@ export function CustomCategories() {
   }
 
   const renderCategoryList = (list: CustomCategory[], type: 'income' | 'expense') => (
-    <div className="space-y-2">
+    <div className="flex flex-wrap gap-1.5">
       <AnimatePresence mode="popLayout">
         {list.map((cat) => (
-          <motion.div
+          <motion.span
             key={cat.id}
             layout
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, x: -10 }}
-            className="flex items-center justify-between p-3 rounded-2xl bg-card border border-border/50"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full border border-border/50 group"
+            style={{ backgroundColor: `${cat.color}15` }}
           >
-            <div className="flex items-center gap-3">
-              <span
-                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ backgroundColor: `${cat.color}22` }}
-              >
-                <Tag className="w-4 h-4" style={{ color: cat.color }} />
-              </span>
-              <div>
-                <p className="text-sm font-semibold">{cat.name}</p>
-                <p className="text-[10px] text-muted-foreground">
-                  {usageCount[cat.name] || 0} transactions
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-1">
-              <button
-                onClick={() => handleEdit(cat)}
-                className="p-2 hover:bg-secondary/60 rounded-lg transition-colors"
-              >
-                <Edit2 className="w-4 h-4 text-muted-foreground" />
-              </button>
-              <button
-                onClick={() => handleDelete(cat.id, cat.name)}
-                className="p-2 hover:bg-destructive/10 rounded-lg transition-colors"
-              >
-                <Trash2 className="w-4 h-4 text-muted-foreground" />
-              </button>
-            </div>
-          </motion.div>
+            <span
+              className="w-2 h-2 rounded-full flex-shrink-0"
+              style={{ backgroundColor: cat.color }}
+            />
+            <span className="font-medium text-foreground">{cat.name}</span>
+            <button
+              onClick={() => handleEdit(cat)}
+              className="ml-0.5 opacity-40 hover:opacity-100 hover:text-primary transition-opacity"
+              title={`Edit ${cat.name}`}
+            >
+              <Edit2 className="w-2.5 h-2.5" />
+            </button>
+            <button
+              onClick={() => handleDelete(cat.id, cat.name)}
+              className="opacity-40 hover:opacity-100 hover:text-destructive transition-opacity"
+              title={`Delete ${cat.name}`}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </motion.span>
         ))}
       </AnimatePresence>
     </div>

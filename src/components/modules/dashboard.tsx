@@ -547,7 +547,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
                 {/* Amount row */}
                 <div className="flex items-center gap-2">
                   <div className="flex-1 relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[15px] text-muted-foreground font-medium">₹</span>
+                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-[15px] text-muted-foreground font-medium">₹</span>
                     <input
                       ref={quickAddInputRef}
                       type="text"
@@ -563,13 +563,13 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
                         if (e.key === 'Enter') handleQuickAddSave()
                         if (e.key === 'Escape') setQuickAddCategory(null)
                       }}
-                      className="w-full h-12 pl-9 pr-3 rounded-2xl bg-secondary text-[15px] font-semibold text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/30"
+                      className="w-full h-12 pl-12 pr-3 rounded-2xl bg-secondary border-2 border-primary/40 text-[15px] font-semibold text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/60"
                     />
                   </div>
                   <button
                     onClick={handleQuickAddSave}
                     disabled={quickAddSaving || !quickAddAmount || Number(quickAddAmount) <= 0}
-                    className="h-12 px-5 rounded-2xl bg-primary text-primary-foreground font-semibold text-[14px] disabled:opacity-30 transition-opacity"
+                    className="h-12 px-5 rounded-2xl bg-primary text-primary-foreground font-semibold text-[14px] disabled:opacity-30 transition-opacity flex-shrink-0"
                   >
                     {quickAddSaving ? '...' : 'Save'}
                   </button>

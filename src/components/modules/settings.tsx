@@ -567,6 +567,34 @@ export function Settings() {
         </motion.div>
       )}
 
+      {/* Help & Support */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.45 }}
+        className="space-y-3"
+      >
+        <h3 className="text-sm font-bold text-foreground uppercase opacity-60">Support</h3>
+        <button
+          onClick={() => {
+            window.history.pushState({ tab: 'support' }, '', '?tab=support')
+            window.dispatchEvent(new PopStateEvent('popstate', { state: { tab: 'support' } }))
+          }}
+          className="w-full bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 rounded-xl p-4 flex items-center justify-between hover:border-primary/40 transition-colors group"
+        >
+          <div className="flex items-center gap-3 text-left">
+            <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Mail className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Help & Support</p>
+              <p className="text-xs text-muted-foreground">Report bugs, request features, get help</p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-muted-foreground" />
+        </button>
+      </motion.div>
+
       {/* About */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}

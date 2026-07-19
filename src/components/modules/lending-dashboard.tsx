@@ -165,7 +165,7 @@ export function LendingDashboard() {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3"
+        className="grid grid-cols-2 gap-3"
       >
         {[
           {
@@ -202,13 +202,13 @@ export function LendingDashboard() {
             <motion.div
               key={i}
               whileHover={{ scale: 1.02 }}
-              className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-secondary to-secondary/50 border border-border/50 space-y-2"
+              className="p-4 rounded-2xl bg-card border border-border/50 shadow-sm flex flex-col items-center text-center space-y-2"
             >
-              <div className={cn('w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center', metric.bg)}>
-                <Icon className={cn('w-4 sm:w-5 h-4 sm:h-5', metric.color)} />
+              <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', metric.bg)}>
+                <Icon className={cn('w-5 h-5', metric.color)} />
               </div>
-              <p className="text-[10px] sm:text-xs text-muted-foreground uppercase font-semibold">{metric.label}</p>
-              <p className="text-xs sm:text-sm md:text-base font-bold text-foreground leading-tight">{metric.value}</p>
+              <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-wider">{metric.label}</p>
+              <p className="text-sm font-bold text-foreground">{metric.value}</p>
             </motion.div>
           )
         })}
@@ -539,6 +539,10 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
 
 function EditLendingForm({ recordId, lending, onClose }: { recordId: string; lending: any[]; onClose: () => void }) {
   const record = lending.find((l: any) => l.id === recordId)
+  const { showToast } = useToast()
+  const [activeTab, setActiveTab] = useState<'edit' | 'payment'>('edit')
+  const [paymentAmount, setPaymentAmount] = useState('')
+  const [paymentNote, setPaymentNote] = useState('')
   const [data, setData] = useState({
     contactName: record?.contactName || '',
     type: (record?.type || 'lent') as 'lent' | 'borrowed',
@@ -569,6 +573,58 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
     }
   }
 
+  const handleRecordPayment = async () => {
+    const payment = parseFloat(paymentAmount)
+    if (!payment || payment <= 0) {
+      showToast('Please enter a valid payment amount')
+      return
+    }
+
+    const currentAmount = parseFloat(data.amount) || 0
+    if (payment > currentAmount) {
+      showToast('Payment cannot exceed the remaining amount')
+      return
+    }
+
+    const newAmount = currentAmount - payment
+    try {
+      await db.transaction('rw', [db.lending, db.systemLogs], async () => {
+        if (newAmount <= 0) {
+          // Fully paid off
+          await db.lending.update(recordId, {
+            amount: 0,
+            status: 'paid',
+          })
+        } else {
+          await db.lending.update(recordId, {
+            amount: newAmount,
+          })
+        }
+
+        // Log the payment
+        await db.systemLogs.add({
+          id: generateUUID(),
+          timestamp: new Date().toISOString(),
+          type: 'lending',
+          description: `Partial payment of ${formatCurrency(payment)} received from ${record.contactName}${paymentNote ? ` - ${paymentNote}` : ''}. Remaining: ${formatCurrency(newAmount)}`,
+          amount: payment,
+        })
+      })
+
+      showToast(`Payment of ${formatCurrency(payment)} recorded successfully`)
+      setPaymentAmount('')
+      setPaymentNote('')
+      if (newAmount <= 0) {
+        onClose()
+      } else {
+        // Update local state to reflect new amount
+        setData({ ...data, amount: newAmount.toString() })
+      }
+    } catch {
+      showToast('Failed to record payment')
+    }
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -583,7 +639,7 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         transition={{ type: 'spring', damping: 25, stiffness: 350 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm bg-card border border-border/60 rounded-3xl p-5 shadow-2xl space-y-4"
+        className="w-full max-w-sm bg-card border border-border/60 rounded-3xl p-5 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-foreground">Edit Lending Record</h3>
@@ -592,72 +648,167 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
           </button>
         </div>
 
-        <Input
-          placeholder="Contact name"
-          value={data.contactName}
-          onChange={(e) => setData({ ...data, contactName: e.target.value })}
-          className="text-sm"
-        />
-
-        <div className="grid grid-cols-2 gap-2">
-          <Select
-            value={data.type}
-            onChange={(e) => setData({ ...data, type: e.target.value as any })}
+        {/* Tab Switcher */}
+        <div className="flex p-1 bg-secondary rounded-xl">
+          <button
+            onClick={() => setActiveTab('edit')}
+            className={cn(
+              'flex-1 py-2 rounded-lg text-xs font-semibold transition-all',
+              activeTab === 'edit'
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
           >
-            <option value="lent">Lent</option>
-            <option value="borrowed">Borrowed</option>
-          </Select>
-
-          <AmountInput
-            placeholder="Amount"
-            value={data.amount}
-            onChange={(val) => setData({ ...data, amount: val })}
-            className="text-sm"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <Input
-            type="number"
-            placeholder="Interest Rate %"
-            value={data.interestRate}
-            onChange={(e) => setData({ ...data, interestRate: e.target.value })}
-            className="text-sm"
-          />
-
-          <Select
-            value={data.interestType}
-            onChange={(e) => setData({ ...data, interestType: e.target.value as any })}
+            Edit Details
+          </button>
+          <button
+            onClick={() => setActiveTab('payment')}
+            className={cn(
+              'flex-1 py-2 rounded-lg text-xs font-semibold transition-all',
+              activeTab === 'payment'
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
           >
-            <option value="none">No Interest</option>
-            <option value="simple">Simple</option>
-            <option value="compound">Compound</option>
-          </Select>
+            Record Payment
+          </button>
         </div>
 
-        <Input
-          type="date"
-          value={data.expectedRepaymentDate}
-          onChange={(e) => setData({ ...data, expectedRepaymentDate: e.target.value })}
-          className="text-sm"
-          label="Expected Repayment Date"
-        />
+        {activeTab === 'edit' ? (
+          <>
+            <Input
+              placeholder="Contact name"
+              value={data.contactName}
+              onChange={(e) => setData({ ...data, contactName: e.target.value })}
+              className="text-sm"
+            />
 
-        <Input
-          placeholder="Notes (optional)"
-          value={data.description}
-          onChange={(e) => setData({ ...data, description: e.target.value })}
-          className="text-sm"
-        />
+            <div className="grid grid-cols-2 gap-2">
+              <Select
+                value={data.type}
+                onChange={(e) => setData({ ...data, type: e.target.value as any })}
+              >
+                <option value="lent">Lent</option>
+                <option value="borrowed">Borrowed</option>
+              </Select>
 
-        <div className="flex gap-2 pt-1">
-          <Button onClick={handleSave} className="flex-1 text-sm">
-            Save Changes
-          </Button>
-          <Button variant="outline" onClick={onClose} className="flex-1 text-sm">
-            Cancel
-          </Button>
-        </div>
+              <AmountInput
+                placeholder="Amount"
+                value={data.amount}
+                onChange={(val) => setData({ ...data, amount: val })}
+                className="text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                type="number"
+                placeholder="Interest Rate %"
+                value={data.interestRate}
+                onChange={(e) => setData({ ...data, interestRate: e.target.value })}
+                className="text-sm"
+              />
+
+              <Select
+                value={data.interestType}
+                onChange={(e) => setData({ ...data, interestType: e.target.value as any })}
+              >
+                <option value="none">No Interest</option>
+                <option value="simple">Simple</option>
+                <option value="compound">Compound</option>
+              </Select>
+            </div>
+
+            <Input
+              type="date"
+              value={data.expectedRepaymentDate}
+              onChange={(e) => setData({ ...data, expectedRepaymentDate: e.target.value })}
+              className="text-sm"
+              label="Expected Repayment Date"
+            />
+
+            <Input
+              placeholder="Notes (optional)"
+              value={data.description}
+              onChange={(e) => setData({ ...data, description: e.target.value })}
+              className="text-sm"
+            />
+
+            <div className="flex gap-2 pt-1">
+              <Button onClick={handleSave} className="flex-1 text-sm">
+                Save Changes
+              </Button>
+              <Button variant="outline" onClick={onClose} className="flex-1 text-sm">
+                Cancel
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Payment Recording Section */}
+            <div className="p-3 bg-secondary/50 rounded-xl border border-border/30 space-y-1">
+              <p className="text-[10px] text-muted-foreground uppercase font-semibold">Outstanding Balance</p>
+              <p className="text-lg font-bold text-foreground">{formatCurrency(parseFloat(data.amount) || 0)}</p>
+              <p className="text-[10px] text-muted-foreground">
+                {record.type === 'lent' ? 'Owed by' : 'Owed to'} {record.contactName}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase">Payment Amount</label>
+                <AmountInput
+                  placeholder="Enter amount received"
+                  value={paymentAmount}
+                  onChange={(val) => setPaymentAmount(val)}
+                  className="text-sm mt-1.5"
+                />
+              </div>
+
+              {/* Quick amount buttons */}
+              <div className="flex flex-wrap gap-2">
+                {[1000, 2000, 5000, 10000].map((amt) => {
+                  const currentAmt = parseFloat(data.amount) || 0
+                  if (amt > currentAmt) return null
+                  return (
+                    <button
+                      key={amt}
+                      onClick={() => setPaymentAmount(amt.toString())}
+                      className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors"
+                    >
+                      +{amt >= 1000 ? `${amt / 1000}K` : amt}
+                    </button>
+                  )
+                })}
+                <button
+                  onClick={() => setPaymentAmount(data.amount)}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition-colors"
+                >
+                  Full Amount
+                </button>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase">Note (optional)</label>
+                <Input
+                  placeholder="e.g., Paid via UPI"
+                  value={paymentNote}
+                  onChange={(e) => setPaymentNote(e.target.value)}
+                  className="text-sm mt-1.5"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button onClick={handleRecordPayment} className="flex-1 text-sm">
+                Record Payment
+              </Button>
+              <Button variant="outline" onClick={onClose} className="flex-1 text-sm">
+                Cancel
+              </Button>
+            </div>
+          </>
+        )}
       </motion.div>
     </motion.div>
   )

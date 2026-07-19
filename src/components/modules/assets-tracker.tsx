@@ -312,11 +312,11 @@ export function AssetsTracker() {
 
           {/* Aggregated Totals */}
           <div className="grid grid-cols-2 gap-4">
-            <Card>
+            <Card className="p-4">
               <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">Asset Equity</p>
               <h4 className="text-base font-bold text-foreground mt-0.5">{formatCurrency(totalAssets)}</h4>
             </Card>
-            <Card>
+            <Card className="p-4">
               <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">Net Position</p>
               <h4 className="text-base font-bold text-foreground mt-0.5">{formatCurrency(netPosition)}</h4>
             </Card>
@@ -414,11 +414,11 @@ export function AssetsTracker() {
         /* Lending & Interest Ledger */
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <Card>
+            <Card className="p-4">
               <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">Lent Out</p>
               <h4 className="text-base font-bold text-emerald-500 mt-0.5">{formatCurrency(totalLent)}</h4>
             </Card>
-            <Card>
+            <Card className="p-4">
               <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">Borrowed</p>
               <h4 className="text-base font-bold text-rose-500 mt-0.5">{formatCurrency(totalBorrowed)}</h4>
             </Card>

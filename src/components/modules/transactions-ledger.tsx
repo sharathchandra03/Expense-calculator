@@ -348,6 +348,11 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
 
               return (
                 <div key={date}>
+                  {/* Day separator line between groups */}
+                  {dateIndex > 0 && (
+                    <div className="mx-4 my-1 h-[3px] rounded-full bg-border" />
+                  )}
+
                   {/* Day Header Row */}
                   <div className="flex items-center justify-between px-5 py-2.5 border-b border-border/40">
                     <div className="flex items-center gap-2">
