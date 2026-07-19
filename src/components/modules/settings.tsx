@@ -382,20 +382,20 @@ export function Settings() {
             </div>
           </div>
           <Select value={currency} onChange={(e) => handleCurrencyChange(e.target.value)} className="w-full">
-            <option value="INR">INR (₹) — Indian Rupee</option>
-            <option value="USD">USD ($) — US Dollar</option>
-            <option value="EUR">EUR (€) — Euro</option>
-            <option value="GBP">GBP (£) — British Pound</option>
-            <option value="JPY">JPY (¥) — Japanese Yen</option>
-            <option value="AED">AED (د.إ) — Dirham</option>
-            <option value="CAD">CAD (CA$) — Canadian Dollar</option>
-            <option value="AUD">AUD (A$) — Australian Dollar</option>
-            <option value="SGD">SGD (S$) — Singapore Dollar</option>
-            <option value="CHF">CHF — Swiss Franc</option>
-            <option value="CNY">CNY (¥) — Chinese Yuan</option>
-            <option value="KRW">KRW (₩) — Korean Won</option>
-            <option value="BRL">BRL (R$) — Brazilian Real</option>
-            <option value="ZAR">ZAR (R) — South African Rand</option>
+            <option value="INR">INR (₹) - Indian Rupee</option>
+            <option value="USD">USD ($) - US Dollar</option>
+            <option value="EUR">EUR (€) - Euro</option>
+            <option value="GBP">GBP (£) - British Pound</option>
+            <option value="JPY">JPY (¥) - Japanese Yen</option>
+            <option value="AED">AED (د.إ) - Dirham</option>
+            <option value="CAD">CAD (CA$) - Canadian Dollar</option>
+            <option value="AUD">AUD (A$) - Australian Dollar</option>
+            <option value="SGD">SGD (S$) - Singapore Dollar</option>
+            <option value="CHF">CHF - Swiss Franc</option>
+            <option value="CNY">CNY (¥) - Chinese Yuan</option>
+            <option value="KRW">KRW (₩) - Korean Won</option>
+            <option value="BRL">BRL (R$) - Brazilian Real</option>
+            <option value="ZAR">ZAR (R) - South African Rand</option>
             <option value="MXN">MXN (MX$) — Mexican Peso</option>
             <option value="THB">THB (฿) — Thai Baht</option>
           </Select>

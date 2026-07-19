@@ -758,7 +758,6 @@ function BillForm({ form, onSubmit }: any) {
         disabled={form.formState.isSubmitting}
         className="w-full h-11 rounded-full bg-foreground text-background font-semibold text-sm uppercase tracking-wider hover:opacity-90 active:scale-[0.97] disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-md"
       >
-        <Check className="w-4 h-4" />
         {form.formState.isSubmitting ? 'Saving...' : 'Save Bill'}
       </button>
     </form>
@@ -794,7 +793,6 @@ function GoalForm({ form, onSubmit }: any) {
       </div>
 
       <Button type="submit" className="w-full">
-        <Check className="w-4 h-4 mr-2" />
         Save Goal
       </Button>
     </form>

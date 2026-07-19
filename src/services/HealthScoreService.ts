@@ -346,6 +346,6 @@ export class HealthScoreService {
    * Calculate cash available after obligations
    */
   static getAvailableCash(liquidAssets: number, monthlyRecurring: number): number {
-    return Math.max(0, liquidAssets - monthlyRecurring)
+    return liquidAssets - monthlyRecurring
   }
 }

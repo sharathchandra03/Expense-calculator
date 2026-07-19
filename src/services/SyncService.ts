@@ -14,6 +14,11 @@ const SYNC_TABLES = [
   'tags',
   'notifications',
   'systemLogs',
+  'userProfile',
+  'debts',
+  'subscriptions',
+  'templates',
+  'splits',
 ] as const
 
 type SyncTable = typeof SYNC_TABLES[number]
@@ -130,6 +135,21 @@ export class SyncService {
         await table.clear()
         if (cloudData.length > 0) {
           await table.bulkAdd(cloudData)
+        }
+
+        // After restoring userProfile, also update localStorage backup
+        if (row.table_name === 'userProfile' && cloudData.length > 0) {
+          const profile = cloudData[0]
+          if (profile) {
+            localStorage.setItem('finance-os-profile', JSON.stringify({
+              name: profile.name || '',
+              email: profile.email || '',
+              avatar: profile.avatar || undefined,
+            }))
+            if (profile.currency) {
+              localStorage.setItem('finance-os-currency', profile.currency)
+            }
+          }
         }
       }
 

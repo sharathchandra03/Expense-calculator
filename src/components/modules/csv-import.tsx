@@ -25,7 +25,7 @@ export function CSVImport() {
   const [step, setStep] = useState<'upload' | 'map' | 'preview' | 'done'>('upload')
   const [rawData, setRawData] = useState<string[][]>([])
   const [headers, setHeaders] = useState<string[]>([])
-  const [mapping, setMapping] = useState<{ date: number; description: number; amount: number; type: number }>({ date: 0, description: 1, amount: 2, type: -1 })
+  const [mapping, setMapping] = useState<{ date: number; description: number; amount: number; type: number; category: number }>({ date: 0, description: 1, amount: 2, type: -1, category: -1 })
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([])
   const [importCount, setImportCount] = useState(0)
   const [importing, setImporting] = useState(false)
@@ -35,7 +35,7 @@ export function CSVImport() {
   const safeAccounts = Array.isArray(accounts) ? accounts : []
   const safeExisting = Array.isArray(existingTx) ? existingTx : []
 
-  // Handle file upload
+  // Handle file upload — supports both bank CSVs and expense app exports
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -66,17 +66,40 @@ export function CSVImport() {
 
       // Auto-detect column mapping
       const h = parsed[0].map(col => col.toLowerCase())
-      const dateIdx = h.findIndex(c => c.includes('date') || c.includes('txn') || c.includes('value'))
-      const descIdx = h.findIndex(c => c.includes('desc') || c.includes('narration') || c.includes('particular') || c.includes('remark'))
-      const amtIdx = h.findIndex(c => c.includes('amount') || c.includes('debit') || c.includes('withdrawal'))
-      const typeIdx = h.findIndex(c => c.includes('type') || c.includes('cr/dr') || c.includes('credit'))
 
-      setMapping({
-        date: dateIdx >= 0 ? dateIdx : 0,
-        description: descIdx >= 0 ? descIdx : 1,
-        amount: amtIdx >= 0 ? amtIdx : 2,
-        type: typeIdx,
-      })
+      // Detect expense app format (Date, Account, Category, Subcategory, Note, INR, Income/Expense, Description, Amount, Currency, Account)
+      const isExpenseAppFormat = h.some(c => c.includes('income/expense')) || (h.includes('note') && h.includes('inr'))
+
+      if (isExpenseAppFormat) {
+        // Expense app format — map to: date from col 0, description from Note col, amount from INR col, type from Income/Expense col, category from Category col
+        const dateIdx = h.findIndex(c => c === 'date')
+        const noteIdx = h.findIndex(c => c === 'note')
+        const amtIdx = h.findIndex(c => c === 'inr' || c === 'amount')
+        const typeIdx = h.findIndex(c => c.includes('income/expense'))
+        const catIdx = h.findIndex(c => c === 'category')
+
+        setMapping({
+          date: dateIdx >= 0 ? dateIdx : 0,
+          description: noteIdx >= 0 ? noteIdx : (h.findIndex(c => c === 'description') >= 0 ? h.findIndex(c => c === 'description') : 1),
+          amount: amtIdx >= 0 ? amtIdx : 5,
+          type: typeIdx >= 0 ? typeIdx : -1,
+          category: catIdx >= 0 ? catIdx : -1,
+        })
+      } else {
+        // Bank statement format
+        const dateIdx = h.findIndex(c => c.includes('date') || c.includes('txn') || c.includes('value'))
+        const descIdx = h.findIndex(c => c.includes('desc') || c.includes('narration') || c.includes('particular') || c.includes('remark'))
+        const amtIdx = h.findIndex(c => c.includes('amount') || c.includes('debit') || c.includes('withdrawal'))
+        const typeIdx = h.findIndex(c => c.includes('type') || c.includes('cr/dr') || c.includes('credit'))
+
+        setMapping({
+          date: dateIdx >= 0 ? dateIdx : 0,
+          description: descIdx >= 0 ? descIdx : 1,
+          amount: amtIdx >= 0 ? amtIdx : 2,
+          type: typeIdx,
+          category: -1,
+        })
+      }
 
       setStep('map')
     }
@@ -93,17 +116,29 @@ export function CSVImport() {
       // Parse date (try multiple formats)
       let date = ''
       const dateClean = dateRaw.replace(/['"]/g, '').trim()
-      const d = new Date(dateClean)
-      if (!isNaN(d.getTime())) {
-        date = d.toISOString().split('T')[0]
-      } else {
-        // Try DD/MM/YYYY or DD-MM-YYYY
-        const parts = dateClean.split(/[\/\-.]/)
-        if (parts.length === 3) {
-          const [day, month, year] = parts
-          const yearFull = year.length === 2 ? `20${year}` : year
-          const parsed = new Date(`${yearFull}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`)
-          if (!isNaN(parsed.getTime())) date = parsed.toISOString().split('T')[0]
+      
+      // Try DD/MM/YYYY HH:MM:SS format (expense app exports)
+      const dtParts = dateClean.split(' ')
+      const datePart = dtParts[0]
+      const slashParts = datePart.split('/')
+      if (slashParts.length === 3 && slashParts[2].length === 4) {
+        const [day, month, year] = slashParts
+        date = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+      }
+      
+      if (!date) {
+        const d = new Date(dateClean)
+        if (!isNaN(d.getTime())) {
+          date = d.toISOString().split('T')[0]
+        } else {
+          // Try DD/MM/YYYY or DD-MM-YYYY
+          const parts = dateClean.split(/[\/\-.]/)
+          if (parts.length === 3) {
+            const [day, month, year] = parts
+            const yearFull = year.length === 2 ? `20${year}` : year
+            const parsed = new Date(`${yearFull}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`)
+            if (!isNaN(parsed.getTime())) date = parsed.toISOString().split('T')[0]
+          }
         }
       }
 
@@ -114,13 +149,20 @@ export function CSVImport() {
       let type: 'expense' | 'income' = 'expense'
       if (mapping.type >= 0) {
         const typeVal = (row[mapping.type] || '').toLowerCase()
-        if (typeVal.includes('cr') || typeVal.includes('credit') || typeVal.includes('income')) type = 'income'
+        if (typeVal.includes('cr') || typeVal.includes('credit') || typeVal === 'income') type = 'income'
+        if (typeVal === 'expense' || typeVal.includes('dr') || typeVal.includes('debit')) type = 'expense'
       } else if (amtRaw.startsWith('+') || amtRaw.includes('CR')) {
         type = 'income'
       }
 
-      // Auto-categorize
-      const category = autoDetectCategory(desc)
+      // Auto-categorize — use CSV category if mapped, otherwise detect from description
+      let category = 'Other'
+      if (mapping.category >= 0 && row[mapping.category]) {
+        // Clean emoji prefix from category (e.g., "🍜 Food" → "Food")
+        category = row[mapping.category].replace(/[\u{1F000}-\u{1FFFF}]/gu, '').trim() || 'Other'
+      } else {
+        category = autoDetectCategory(desc)
+      }
 
       // Duplicate detection
       const isDuplicate = safeExisting.some(tx =>
@@ -138,10 +180,22 @@ export function CSVImport() {
   const handleImport = useCallback(async () => {
     setImporting(true)
     const toImport = parsedRows.filter(r => !r.isDuplicate)
-    const defaultAccount = safeAccounts.find(a => a.type === 'bank') || safeAccounts[0]
+    let defaultAccount = safeAccounts.find(a => a.type === 'bank') || safeAccounts[0]
 
     try {
       await db.transaction('rw', [db.transactions, db.accounts, db.assets, db.systemLogs], async () => {
+        // Create a default account if none exists
+        if (!defaultAccount) {
+          const newAccId = generateUUID()
+          await db.accounts.add({
+            id: newAccId,
+            name: 'Imported Account',
+            type: 'bank',
+            balance: 0,
+          })
+          defaultAccount = { id: newAccId, name: 'Imported Account', type: 'bank', balance: 0 } as any
+        }
+
         for (const row of toImport) {
           await db.transactions.add({
             id: generateUUID(),
@@ -158,7 +212,8 @@ export function CSVImport() {
         // Update account balance with net change
         if (defaultAccount) {
           const netChange = toImport.reduce((sum, r) => sum + (r.type === 'income' ? r.amount : -r.amount), 0)
-          const newBalance = defaultAccount.balance + netChange
+          const currentBalance = (await db.accounts.get(defaultAccount.id))?.balance || 0
+          const newBalance = currentBalance + netChange
           await db.accounts.update(defaultAccount.id, { balance: newBalance })
           await syncAccountToAsset(defaultAccount.name, newBalance)
         }
@@ -220,14 +275,15 @@ export function CSVImport() {
             <label className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-border/60 bg-secondary/20 hover:bg-secondary/30 cursor-pointer transition-colors">
               <Upload className="w-8 h-8 text-muted-foreground/50 mb-3" />
               <p className="text-sm font-semibold text-foreground">Drop CSV file or tap to select</p>
-              <p className="text-[10px] text-muted-foreground mt-1">Supports SBI, HDFC, ICICI, Axis formats</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Supports expense apps & bank statements</p>
               <input type="file" accept=".csv,.txt" onChange={handleFileUpload} className="hidden" />
             </label>
 
             <div className="p-3 rounded-xl bg-secondary/30 border border-border/30 space-y-1">
               <p className="text-[10px] font-bold text-muted-foreground uppercase">Supported Formats</p>
-              <p className="text-[10px] text-muted-foreground">CSV with columns: Date, Description/Narration, Amount, Type(optional)</p>
-              <p className="text-[10px] text-muted-foreground">Common bank exports from SBI, HDFC, ICICI, Axis, Kotak</p>
+              <p className="text-[10px] text-muted-foreground">• Expense app exports (with Date, Category, Note, Amount, Income/Expense)</p>
+              <p className="text-[10px] text-muted-foreground">• Bank statements CSV (SBI, HDFC, ICICI, Axis, Kotak)</p>
+              <p className="text-[10px] text-muted-foreground">• Any CSV with Date, Description, Amount columns</p>
             </div>
           </motion.div>
         )}

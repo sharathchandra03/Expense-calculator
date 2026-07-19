@@ -103,7 +103,7 @@ export function SubscriptionTracker() {
             <p className="text-xs font-bold text-amber-600 dark:text-amber-400">Upcoming renewals</p>
             {upcoming.map(s => (
               <p key={s.id} className="text-[10px] text-muted-foreground mt-0.5">
-                {s.name} — {formatCurrency(s.amount)} on {new Date(s.nextBilling).toLocaleDateString()}
+                {s.name} - {formatCurrency(s.amount)} on {new Date(s.nextBilling).toLocaleDateString()}
               </p>
             ))}
           </div>
@@ -117,7 +117,7 @@ export function SubscriptionTracker() {
           <div>
             <p className="text-xs font-semibold text-foreground">Possibly unused</p>
             <p className="text-[10px] text-muted-foreground">
-              {possiblyUnused.map(s => s.name).join(', ')} — not used in 30+ days. Consider cancelling?
+              {possiblyUnused.map(s => s.name).join(', ')} - not used in 30+ days. Consider cancelling?
             </p>
           </div>
         </div>

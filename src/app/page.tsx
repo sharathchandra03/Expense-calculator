@@ -67,6 +67,16 @@ export default function Home() {
 
   // Seed database on mount
   useEffect(() => {
+    // Clear old service worker caches and force fresh load
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        registrations.forEach((reg) => reg.unregister())
+      })
+      if ('caches' in window) {
+        caches.keys().then((keys) => keys.forEach((key) => caches.delete(key)))
+      }
+    }
+
     async function initDB() {
       try {
         await seedDatabaseIfEmpty()
@@ -104,29 +114,10 @@ export default function Home() {
     // Register Service Worker for PWA in production only
     if (process.env.NODE_ENV === 'production' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').then((reg) => {
-        console.log('PWA Service Worker registered successfully:', reg.scope)
+        console.log('[PennyFlow] Service worker registered')
       }).catch((err) => {
-        console.error('PWA Service Worker registration failed:', err)
+        console.error('[PennyFlow] SW registration failed:', err)
       })
-    }
-
-    // Programmatically unregister service workers in development to prevent HMR loop
-    if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        for (const registration of registrations) {
-          registration.unregister().then((success) => {
-            if (success) {
-              console.log('Successfully unregistered stale service worker in development');
-              // Clear caches as well to restore clean state
-              if ('caches' in window) {
-                caches.keys().then((keys) => {
-                  keys.forEach((key) => caches.delete(key));
-                });
-              }
-            }
-          });
-        }
-      });
     }
 
     // Global keyboard shortcut for search (Cmd+K or Ctrl+K)

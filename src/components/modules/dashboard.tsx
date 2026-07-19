@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, Transaction, Lending, Asset, Goal, Bill, generateUUID, syncAccountToAsset } from '@/db/schema'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { formatCurrency, cn } from '@/lib/utils'
-import { ArrowUpRight, ArrowDownRight, Sparkles, Target, Calendar, ArrowRight, ShieldCheck, AlertCircle, ShoppingBag, Plus, Zap, TrendingUp, DollarSign, Heart, Clock, GripVertical, UtensilsCrossed, Car, ShoppingCart, Receipt, MoreHorizontal, X, Check, Settings } from 'lucide-react'
+import { ArrowUpRight, ArrowDownRight, Sparkles, Target, Calendar, ArrowRight, ShieldCheck, AlertCircle, ShoppingBag, Plus, Zap, TrendingUp, DollarSign, Heart, Clock, UtensilsCrossed, Car, ShoppingCart, Receipt, MoreHorizontal, X, Check, Settings } from 'lucide-react'
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import { HealthScoreService, HealthScoreBreakdown } from '@/services/HealthScoreService'
 import { SyncCard } from '@/components/ui/sync-card'
@@ -18,9 +18,9 @@ interface DashboardProps {
   onNavigateToTab: (tab: any) => void;
 }
 
-type DashCardId = 'networth' | 'health' | 'cash' | 'month' | 'bills' | 'goals' | 'lending' | 'recent'
+type DashCardId = 'spending' | 'health' | 'topcat' | 'month' | 'bills' | 'goals' | 'lending' | 'recent'
 
-const DEFAULT_DASH_ORDER: DashCardId[] = ['networth', 'health', 'cash', 'month', 'bills', 'goals', 'lending', 'recent']
+const DEFAULT_DASH_ORDER: DashCardId[] = ['spending', 'health', 'topcat', 'month', 'bills', 'goals', 'lending', 'recent']
 
 function getDashStoredOrder(): DashCardId[] {
   if (typeof window === 'undefined') return DEFAULT_DASH_ORDER
@@ -227,7 +227,9 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
   const assetsTotal = safeAssets.reduce((sum, a) => sum + a.balance, 0)
   const lentOut = safeLending.filter(l => l.type === 'lent' && l.status === 'active').reduce((s, l) => s + l.amount, 0)
   const borrowed = safeLending.filter(l => l.type === 'borrowed' && l.status === 'active').reduce((s, l) => s + l.amount, 0)
-  const netWorth = Math.max(accountsTotal, assetsTotal) + investmentsValue + lentOut - borrowed
+  // Net Worth: use accounts as primary source if any exist, otherwise fall back to assets
+  const primaryBalance = safeAccounts.length > 0 ? accountsTotal : assetsTotal
+  const netWorth = primaryBalance + investmentsValue + lentOut - borrowed
 
   // Spending trend
   const spendingTrend = React.useMemo(() => {
@@ -251,13 +253,22 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
   const [dashOrder, setDashOrder] = React.useState<DashCardId[]>(getDashStoredOrder)
   const [hiddenCards, setHiddenCards] = React.useState<DashCardId[]>(() => {
     if (typeof window === 'undefined') return []
-    try { const s = localStorage.getItem('pennyflow-dash-hidden'); return s ? JSON.parse(s) : [] } catch { return [] }
+    try {
+      const s = localStorage.getItem('pennyflow-dash-hidden')
+      if (s) {
+        const parsed = JSON.parse(s)
+        // Filter out old card IDs that no longer exist
+        return parsed.filter((id: string) => DEFAULT_DASH_ORDER.includes(id as DashCardId))
+      }
+    } catch {}
+    return []
   })
   const [compactMode, setCompactMode] = React.useState(() => {
     if (typeof window === 'undefined') return false
     return localStorage.getItem('pennyflow-dash-compact') === 'true'
   })
   const [showDashSettings, setShowDashSettings] = React.useState(false)
+  const [showAllInsights, setShowAllInsights] = React.useState(false)
 
   const handleDashReorder = (newOrder: DashCardId[]) => {
     setDashOrder(newOrder)
@@ -342,7 +353,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
         <div className="hero-gradient px-6 pt-10 pb-8 rounded-[1.75rem] text-white">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-1.5">
-              <span className="text-[13px] font-medium text-white/70">Total savings</span>
+              <span className="text-[13px] font-medium text-white/70">Net balance</span>
               <Sparkles className="w-3.5 h-3.5 text-white/50" />
             </div>
             <button
@@ -657,8 +668,15 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
       {/* Smart Insights */}
       {smartInsights.length > 0 && (
         <div className="space-y-2.5">
-          <p className="text-[13px] font-semibold text-foreground">Insights</p>
-          {smartInsights.map(insight => (
+          <div className="flex items-center justify-between">
+            <p className="text-[13px] font-semibold text-foreground">Insights</p>
+            {smartInsights.length > 2 && (
+              <button onClick={() => setShowAllInsights(!showAllInsights)} className="text-[12px] font-medium text-accent-foreground">
+                {showAllInsights ? 'Show less' : `View all →`}
+              </button>
+            )}
+          </div>
+          {(showAllInsights ? smartInsights : smartInsights.slice(0, 2)).map(insight => (
             <div
               key={insight.id}
               className={cn(
@@ -745,23 +763,28 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
       <Reorder.Group axis="y" values={visibleDashOrder} onReorder={handleDashReorder} className={cn("space-y-4", compactMode && "space-y-2")}>
         {visibleDashOrder.map((cardId) => {
           switch (cardId) {
-            case 'networth':
+            case 'spending':
               return (
-                <DashReorderCard key="networth" cardId="networth">
-                  <Card className="bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 relative overflow-hidden">
-                    <div className="absolute -right-20 -top-20 w-48 h-48 rounded-full bg-primary/10 blur-3xl" />
+                <DashReorderCard key="spending" cardId="spending">
+                  <Card>
                     <CardContent className="pt-6">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Net Worth</p>
-                      <h2 className="text-3xl sm:text-5xl font-bold text-foreground mb-6 break-all">{formatCurrency(netWorth)}</h2>
-                      
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="p-3 rounded-2xl bg-secondary/50 border border-border/50">
-                          <p className="text-[10px] text-muted-foreground font-semibold uppercase">Cash & Checking</p>
-                          <p className="text-base font-bold text-foreground mt-1">{formatCurrency(liquidAssets)}</p>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Spending Pace</p>
+                      <div className="flex items-baseline gap-2 mb-4">
+                        <span className="text-2xl font-bold text-foreground">{formatCurrency(Math.round(monthlyBudgetData.monthlySpent / Math.max(1, new Date().getDate())))}</span>
+                        <span className="text-xs text-muted-foreground">/day avg</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="p-2.5 rounded-xl bg-secondary/50">
+                          <p className="text-[9px] text-muted-foreground uppercase">This month</p>
+                          <p className="text-sm font-bold text-foreground mt-0.5">{formatCurrency(monthlyBudgetData.monthlySpent)}</p>
                         </div>
-                        <div className="p-3 rounded-2xl bg-secondary/50 border border-border/50">
-                          <p className="text-[10px] text-muted-foreground font-semibold uppercase">Invested</p>
-                          <p className="text-base font-bold text-foreground mt-1">{formatCurrency(investedAssets)}</p>
+                        <div className="p-2.5 rounded-xl bg-secondary/50">
+                          <p className="text-[9px] text-muted-foreground uppercase">Income</p>
+                          <p className="text-sm font-bold text-positive mt-0.5">{formatCurrency(monthIncomeTotal)}</p>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-secondary/50">
+                          <p className="text-[9px] text-muted-foreground uppercase">Saved</p>
+                          <p className={cn("text-sm font-bold mt-0.5", monthNet >= 0 ? "text-positive" : "text-negative")}>{formatCurrency(Math.abs(monthNet))}</p>
                         </div>
                       </div>
                     </CardContent>
@@ -769,27 +792,59 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
                 </DashReorderCard>
               )
 
+            case 'topcat':
+              {
+                const now = new Date()
+                const monthExpenses = safeAllTransactions.filter(tx => {
+                  const d = new Date(tx.date)
+                  return tx.type === 'expense' && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+                })
+                const catMap: Record<string, number> = {}
+                monthExpenses.forEach(tx => { catMap[tx.category] = (catMap[tx.category] || 0) + tx.amount })
+                const topCats = Object.entries(catMap).sort(([,a], [,b]) => b - a).slice(0, 5)
+                const totalExp = monthExpenses.reduce((s, t) => s + t.amount, 0)
+
+                if (topCats.length === 0) return null
+                return (
+                  <DashReorderCard key="topcat" cardId="topcat">
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Top Categories</p>
+                          <button onClick={() => onNavigateToTab('analytics')} className="text-[10px] text-accent-foreground font-medium">Details →</button>
+                        </div>
+                        <div className="space-y-3">
+                          {topCats.map(([cat, amt]) => {
+                            const pct = totalExp > 0 ? Math.round((amt / totalExp) * 100) : 0
+                            const cfg = getCategoryConfig(cat)
+                            return (
+                              <div key={cat} className="flex items-center gap-3">
+                                <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0", cfg.bg)}>{cfg.emoji}</div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex justify-between items-center mb-1">
+                                    <span className="text-[12px] font-medium text-foreground capitalize">{cat}</span>
+                                    <span className="text-[12px] font-bold text-foreground">{formatCurrency(amt)}</span>
+                                  </div>
+                                  <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+                                    <div className="h-full rounded-full bg-accent-foreground/60" style={{ width: `${pct}%` }} />
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </DashReorderCard>
+                )
+              }
+
             case 'health':
               return (
                 <DashReorderCard key="health" cardId="health">
                   <HealthCardInteractive
                     healthScore={healthScore}
                     metrics={metrics}
-                    onNavigate={onNavigateToTab}
-                  />
-                </DashReorderCard>
-              )
-
-            case 'cash':
-              return (
-                <DashReorderCard key="cash" cardId="cash">
-                  <CashCardInteractive
-                    availableCash={availableCash}
-                    liquidAssets={liquidAssets}
-                    monthlyExpenses={monthlyExpenses}
-                    monthlyRecurring={monthlyRecurring}
-                    cashStatus={cashStatus}
-                    accounts={safeAccounts}
                     onNavigate={onNavigateToTab}
                   />
                 </DashReorderCard>
@@ -808,31 +863,34 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
               )
 
             case 'bills':
-              if (upcomingBills.length === 0) return null
               return (
                 <DashReorderCard key="bills" cardId="bills">
-                  <Card className="bg-gradient-to-br from-amber-950/20 to-amber-900/10 border-amber-500/30">
+                  <Card>
                     <CardContent className="pt-6">
                       <div className="flex items-start justify-between mb-4">
                         <div>
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Bills Due</p>
-                          <h3 className="text-2xl font-bold text-foreground">{formatCurrency(totalBillsThisMonth)}</h3>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Bills</p>
+                          <h3 className="text-2xl font-bold text-foreground">{upcomingBills.length > 0 ? formatCurrency(totalBillsThisMonth) : 'No bills'}</h3>
                         </div>
                         <Clock className="w-6 h-6 text-amber-500" />
                       </div>
-                      <div className="space-y-2">
-                        {upcomingBills.map((bill, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg bg-background/50 border border-border/50">
-                            <div className="flex-1">
-                              <p className="text-xs font-semibold text-foreground">{bill.title}</p>
-                              <p className="text-[10px] text-muted-foreground">Due {new Date(bill.dueDate).toLocaleDateString()}</p>
+                      {upcomingBills.length > 0 ? (
+                        <div className="space-y-2">
+                          {upcomingBills.map((bill, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/50">
+                              <div className="flex-1">
+                                <p className="text-xs font-semibold text-foreground">{bill.title}</p>
+                                <p className="text-[10px] text-muted-foreground">Due {new Date(bill.dueDate).toLocaleDateString()}</p>
+                              </div>
+                              <p className="text-sm font-bold text-foreground">{formatCurrency(bill.amount)}</p>
                             </div>
-                            <p className="text-sm font-bold text-amber-600 dark:text-amber-400">{formatCurrency(bill.amount)}</p>
-                          </div>
-                        ))}
-                      </div>
-                      <button onClick={() => onNavigateToTab('forecast')} className="w-full mt-3 py-2 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-semibold hover:bg-amber-500/30 transition-colors">
-                        View All Bills →
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[12px] text-muted-foreground">Add bills to track due dates and never miss a payment.</p>
+                      )}
+                      <button onClick={() => onNavigateToTab('bills')} className="w-full mt-3 py-2.5 rounded-xl bg-secondary text-foreground text-xs font-semibold hover:bg-secondary/70 transition-colors">
+                        {upcomingBills.length > 0 ? 'View All Bills' : 'Add a Bill'} →
                       </button>
                     </CardContent>
                   </Card>
@@ -840,49 +898,54 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
               )
 
             case 'goals':
-              if (!primaryGoal) return null
               return (
                 <DashReorderCard key="goals" cardId="goals">
-                  <Card className="bg-gradient-to-br from-indigo-950/20 to-indigo-900/10 border-indigo-500/30">
+                  <Card>
                     <CardContent className="pt-6">
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex-1">
                           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Savings Goal</p>
-                          <h3 className="text-lg font-bold text-foreground">{primaryGoal.title}</h3>
+                          <h3 className="text-lg font-bold text-foreground">{primaryGoal ? primaryGoal.title : 'No goals set'}</h3>
                         </div>
                         <Target className="w-6 h-6 text-indigo-500" />
                       </div>
-                      <div className="mb-3">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-xs text-muted-foreground">{formatCurrency(primaryGoal.currentAmount)} of {formatCurrency(primaryGoal.targetAmount)}</span>
-                          <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{goalProgress}%</span>
+                      {primaryGoal ? (
+                        <div className="mb-3">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-xs text-muted-foreground">{formatCurrency(primaryGoal.currentAmount)} of {formatCurrency(primaryGoal.targetAmount)}</span>
+                            <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{goalProgress}%</span>
+                          </div>
+                          <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
+                            <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${goalProgress}%` }} />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-2">Target: {new Date(primaryGoal.targetDate).toLocaleDateString()}</p>
                         </div>
-                        <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
-                          <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${goalProgress}%` }} />
-                        </div>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Target: {new Date(primaryGoal.targetDate).toLocaleDateString()}</p>
+                      ) : (
+                        <p className="text-[12px] text-muted-foreground mb-3">Set a savings goal to track your progress toward something meaningful.</p>
+                      )}
+                      <button onClick={() => onNavigateToTab('goals')} className="w-full py-2.5 rounded-xl bg-secondary text-foreground text-xs font-semibold hover:bg-secondary/70 transition-colors">
+                        {primaryGoal ? 'View Goals' : 'Create a Goal'} →
+                      </button>
                     </CardContent>
                   </Card>
                 </DashReorderCard>
               )
 
             case 'lending':
-              if (activeLendingCount === 0) return null
               return (
                 <DashReorderCard key="lending" cardId="lending">
-                  <Card className="bg-gradient-to-br from-pink-950/20 to-pink-900/10 border-pink-500/30">
+                  <Card>
                     <CardContent className="pt-6">
-                      <div className="flex items-start justify-between">
+                      <div className="flex items-start justify-between mb-3">
                         <div>
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Active Lending</p>
-                          <h3 className="text-2xl font-bold text-foreground">{activeLendingCount} active</h3>
-                          <p className="text-xs text-muted-foreground mt-1">Track your IOUs</p>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Lending</p>
+                          <h3 className="text-2xl font-bold text-foreground">{activeLendingCount > 0 ? `${activeLendingCount} active` : 'None'}</h3>
+                          <p className="text-xs text-muted-foreground mt-1">{activeLendingCount > 0 ? 'Track money lent & borrowed' : 'Track IOUs with friends & family'}</p>
                         </div>
                         <Heart className="w-6 h-6 text-pink-500" />
                       </div>
-                      <button onClick={() => onNavigateToTab('assets')} className="w-full mt-4 py-2 rounded-lg bg-pink-500/20 text-pink-600 dark:text-pink-400 text-xs font-semibold hover:bg-pink-500/30 transition-colors">
-                        View Lending Details →
+                      <button onClick={() => onNavigateToTab('lending')} className="w-full mt-2 py-2.5 rounded-xl bg-secondary text-foreground text-xs font-semibold hover:bg-secondary/70 transition-colors">
+                        {activeLendingCount > 0 ? 'View Details' : 'Add Lending'} →
                       </button>
                     </CardContent>
                   </Card>
@@ -890,37 +953,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
               )
 
             case 'recent':
-              if (safeTransactions.length === 0) return null
-              return (
-                <DashReorderCard key="recent" cardId="recent">
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-bold tracking-tight text-foreground">Recent Activity</h3>
-                      <button onClick={() => onNavigateToTab('ledger')} className="text-xs text-primary font-semibold flex items-center gap-1">
-                        See all <ArrowRight className="w-3 h-3" />
-                      </button>
-                    </div>
-                    <div className="space-y-2">
-                      {safeTransactions.map((tx) => (
-                        <div key={tx.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border/50">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
-                              {getCategoryIcon(tx.category, tx.type)}
-                            </div>
-                            <div>
-                              <p className="text-xs font-bold text-foreground">{tx.description}</p>
-                              <p className="text-[10px] text-muted-foreground">{tx.category}</p>
-                            </div>
-                          </div>
-                          <p className={cn("text-xs font-bold", tx.type === 'income' ? "text-emerald-500" : "text-foreground")}>
-                            {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </DashReorderCard>
-              )
+              return null // Recent transactions already shown above in the main feed
 
             default:
               return null
@@ -1201,28 +1234,48 @@ function CashCardInteractive({ availableCash, liquidAssets, monthlyExpenses, mon
   )
 }
 
-// Dashboard reorderable card with grip handle
+// Dashboard reorderable card — only drags on long-press (prevents accidental reorder while scrolling)
 function DashReorderCard({ cardId, children }: { cardId: DashCardId; children: React.ReactNode }) {
   const controls = useDragControls()
+  const [isDragEnabled, setIsDragEnabled] = React.useState(false)
+  const longPressTimer = React.useRef<NodeJS.Timeout | null>(null)
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // Start a 500ms long-press timer before enabling drag
+    longPressTimer.current = setTimeout(() => {
+      setIsDragEnabled(true)
+      controls.start(e.nativeEvent as any)
+    }, 500)
+  }
+
+  const handlePointerUp = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+    setIsDragEnabled(false)
+  }
+
+  const handlePointerCancel = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+    setIsDragEnabled(false)
+  }
 
   return (
     <Reorder.Item
       value={cardId}
       dragListener={false}
       dragControls={controls}
-      className="relative"
-      whileDrag={{ scale: 1.02, boxShadow: '0 8px 32px rgba(0,0,0,0.25)', zIndex: 50 }}
+      className={isDragEnabled ? "cursor-grabbing" : ""}
+      whileDrag={{ scale: 1.02, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', zIndex: 50 }}
       transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
     >
-      {/* Drag handle */}
-      <button
-        type="button"
-        onPointerDown={(e) => controls.start(e)}
-        className="absolute top-4 right-4 z-10 p-2 rounded-xl cursor-grab active:cursor-grabbing touch-none bg-secondary/80 hover:bg-secondary transition-colors"
-        aria-label="Drag to reorder"
-      >
-        <GripVertical className="w-4 h-4 text-muted-foreground" />
-      </button>
       {children}
     </Reorder.Item>
   )

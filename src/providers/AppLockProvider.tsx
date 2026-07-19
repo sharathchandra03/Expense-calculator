@@ -53,69 +53,45 @@ function verifyPIN(input: string, storedHash: string): boolean {
   return hashPIN(input) === storedHash
 }
 
-// Check if biometric auth is available on this device
+// Check if biometric/screen lock auth is available
 async function checkBiometricAvailability(): Promise<boolean> {
   if (typeof window === 'undefined') return false
+  // Check if the device supports screen lock (fingerprint/face/PIN)
   if (!window.PublicKeyCredential) return false
   try {
-    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-    return available
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
   } catch {
     return false
   }
 }
 
-// Trigger biometric authentication via WebAuthn
+// Trigger device screen lock (fingerprint/face/device PIN) — NOT passkeys
 async function authenticateWithBiometric(): Promise<boolean> {
   try {
-    // Use a simple challenge-response to trigger the biometric prompt
-    const challenge = new Uint8Array(32)
-    crypto.getRandomValues(challenge)
-
-    const credential = await navigator.credentials.get({
+    // Use the Web Lock Screen verification via navigator.credentials
+    // This triggers the DEVICE lock screen (fingerprint/face) not a passkey flow
+    const credential = await navigator.credentials.create({
       publicKey: {
-        challenge,
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: { name: 'PennyFlow' },
+        user: {
+          id: new TextEncoder().encode('pennyflow-local-user'),
+          name: 'local',
+          displayName: 'PennyFlow User',
+        },
+        pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform', // ONLY device biometric, no external keys
+          userVerification: 'required', // Forces fingerprint/face
+          residentKey: 'discouraged', // Don't create a passkey
+        },
         timeout: 60000,
-        userVerification: 'required',
-        rpId: window.location.hostname,
-        allowCredentials: [],
+        attestation: 'none',
       },
     })
-
-    // If we get here without error, biometric was successful
-    return true
-  } catch (err: any) {
-    // NotAllowedError means user cancelled or failed
-    // If no credentials exist, fall through to registration-based approach
-    if (err.name === 'NotAllowedError') return false
-
-    // Try simpler approach — use credential creation as auth verification
-    try {
-      const challenge = new Uint8Array(32)
-      crypto.getRandomValues(challenge)
-
-      const credential = await navigator.credentials.create({
-        publicKey: {
-          challenge,
-          rp: { name: 'PennyFlow', id: window.location.hostname },
-          user: {
-            id: new Uint8Array(16),
-            name: 'pennyflow-user',
-            displayName: 'PennyFlow User',
-          },
-          pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
-          authenticatorSelection: {
-            authenticatorAttachment: 'platform',
-            userVerification: 'required',
-          },
-          timeout: 60000,
-        },
-      })
-
-      return !!credential
-    } catch {
-      return false
-    }
+    return !!credential
+  } catch {
+    return false
   }
 }
 
