@@ -5,7 +5,8 @@ import { db, generateUUID, syncAccountToAsset } from '@/db/schema'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { formatCurrency, cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, FileText, Check, AlertCircle, X, ArrowRight, Download } from 'lucide-react'
+import { Upload, FileText, Check, AlertCircle, X, ArrowRight, Download, FileSpreadsheet } from 'lucide-react'
+import * as XLSX from 'xlsx'
 
 interface ParsedRow {
   date: string
@@ -35,75 +36,119 @@ export function CSVImport() {
   const safeAccounts = Array.isArray(accounts) ? accounts : []
   const safeExisting = Array.isArray(existingTx) ? existingTx : []
 
-  // Handle file upload — supports both bank CSVs and expense app exports
+  // Handle file upload - supports CSV and Excel (.xlsx, .xls)
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    const reader = new FileReader()
-    reader.onload = (evt) => {
-      const text = evt.target?.result as string
-      const lines = text.split('\n').filter(l => l.trim())
-      if (lines.length < 2) return
+    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
 
-      // Parse CSV (handle quoted fields)
-      const parseCSVLine = (line: string): string[] => {
-        const result: string[] = []
-        let current = ''
-        let inQuotes = false
-        for (const char of line) {
-          if (char === '"') { inQuotes = !inQuotes; continue }
-          if (char === ',' && !inQuotes) { result.push(current.trim()); current = ''; continue }
-          current += char
+    if (isExcel) {
+      // Parse Excel file
+      const reader = new FileReader()
+      reader.onload = (evt) => {
+        const data = new Uint8Array(evt.target?.result as ArrayBuffer)
+        const workbook = XLSX.read(data, { type: 'array' })
+        const sheetName = workbook.SheetNames[0]
+        const sheet = workbook.Sheets[sheetName]
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as string[][]
+
+        if (jsonData.length < 2) return
+
+        const headerRow = jsonData[0].map(h => String(h || ''))
+        const dataRows = jsonData.slice(1).map(row => (row || []).map(cell => String(cell || '')))
+        setHeaders(headerRow)
+        setRawData(dataRows)
+        autoDetectMapping(headerRow)
+        setStep('map')
+      }
+      reader.readAsArrayBuffer(file)
+    } else {
+      // Parse CSV file
+      const reader = new FileReader()
+      reader.onload = (evt) => {
+        const text = evt.target?.result as string
+        const lines = text.split('\n').filter(l => l.trim())
+        if (lines.length < 2) return
+
+        const parseCSVLine = (line: string): string[] => {
+          const result: string[] = []
+          let current = ''
+          let inQuotes = false
+          for (const char of line) {
+            if (char === '"') { inQuotes = !inQuotes; continue }
+            if (char === ',' && !inQuotes) { result.push(current.trim()); current = ''; continue }
+            current += char
+          }
+          result.push(current.trim())
+          return result
         }
-        result.push(current.trim())
-        return result
+
+        const parsed = lines.map(l => parseCSVLine(l))
+        setHeaders(parsed[0])
+        setRawData(parsed.slice(1))
+        autoDetectMapping(parsed[0])
+        setStep('map')
       }
-
-      const parsed = lines.map(l => parseCSVLine(l))
-      setHeaders(parsed[0])
-      setRawData(parsed.slice(1))
-
-      // Auto-detect column mapping
-      const h = parsed[0].map(col => col.toLowerCase())
-
-      // Detect expense app format (Date, Account, Category, Subcategory, Note, INR, Income/Expense, Description, Amount, Currency, Account)
-      const isExpenseAppFormat = h.some(c => c.includes('income/expense')) || (h.includes('note') && h.includes('inr'))
-
-      if (isExpenseAppFormat) {
-        // Expense app format — map to: date from col 0, description from Note col, amount from INR col, type from Income/Expense col, category from Category col
-        const dateIdx = h.findIndex(c => c === 'date')
-        const noteIdx = h.findIndex(c => c === 'note')
-        const amtIdx = h.findIndex(c => c === 'inr' || c === 'amount')
-        const typeIdx = h.findIndex(c => c.includes('income/expense'))
-        const catIdx = h.findIndex(c => c === 'category')
-
-        setMapping({
-          date: dateIdx >= 0 ? dateIdx : 0,
-          description: noteIdx >= 0 ? noteIdx : (h.findIndex(c => c === 'description') >= 0 ? h.findIndex(c => c === 'description') : 1),
-          amount: amtIdx >= 0 ? amtIdx : 5,
-          type: typeIdx >= 0 ? typeIdx : -1,
-          category: catIdx >= 0 ? catIdx : -1,
-        })
-      } else {
-        // Bank statement format
-        const dateIdx = h.findIndex(c => c.includes('date') || c.includes('txn') || c.includes('value'))
-        const descIdx = h.findIndex(c => c.includes('desc') || c.includes('narration') || c.includes('particular') || c.includes('remark'))
-        const amtIdx = h.findIndex(c => c.includes('amount') || c.includes('debit') || c.includes('withdrawal'))
-        const typeIdx = h.findIndex(c => c.includes('type') || c.includes('cr/dr') || c.includes('credit'))
-
-        setMapping({
-          date: dateIdx >= 0 ? dateIdx : 0,
-          description: descIdx >= 0 ? descIdx : 1,
-          amount: amtIdx >= 0 ? amtIdx : 2,
-          type: typeIdx,
-          category: -1,
-        })
-      }
-
-      setStep('map')
+      reader.readAsText(file)
     }
-    reader.readAsText(file)
+  }, [])
+
+  // Auto-detect column mapping from headers
+  const autoDetectMapping = (headerRow: string[]) => {
+    const h = headerRow.map(col => col.toLowerCase())
+    const isExpenseAppFormat = h.some(c => c.includes('income/expense')) || (h.includes('note') && h.includes('inr'))
+
+    if (isExpenseAppFormat) {
+      const dateIdx = h.findIndex(c => c === 'date')
+      const noteIdx = h.findIndex(c => c === 'note')
+      const amtIdx = h.findIndex(c => c === 'inr' || c === 'amount')
+      const typeIdx = h.findIndex(c => c.includes('income/expense'))
+      const catIdx = h.findIndex(c => c === 'category')
+      setMapping({ date: dateIdx >= 0 ? dateIdx : 0, description: noteIdx >= 0 ? noteIdx : 1, amount: amtIdx >= 0 ? amtIdx : 5, type: typeIdx >= 0 ? typeIdx : -1, category: catIdx >= 0 ? catIdx : -1 })
+    } else {
+      const dateIdx = h.findIndex(c => c.includes('date') || c.includes('txn') || c.includes('value'))
+      const descIdx = h.findIndex(c => c.includes('desc') || c.includes('narration') || c.includes('particular') || c.includes('remark') || c.includes('note'))
+      const amtIdx = h.findIndex(c => c.includes('amount') || c.includes('debit') || c.includes('withdrawal') || c.includes('inr'))
+      const typeIdx = h.findIndex(c => c.includes('type') || c.includes('cr/dr') || c.includes('credit') || c.includes('income/expense'))
+      const catIdx = h.findIndex(c => c.includes('category'))
+      setMapping({ date: dateIdx >= 0 ? dateIdx : 0, description: descIdx >= 0 ? descIdx : 1, amount: amtIdx >= 0 ? amtIdx : 2, type: typeIdx, category: catIdx >= 0 ? catIdx : -1 })
+    }
+  }
+
+  // Export transactions as CSV
+  const handleExportCSV = useCallback(async () => {
+    const allTx = await db.transactions.toArray()
+    const accounts = await db.accounts.toArray()
+    const headers = ['Date', 'Type', 'Category', 'Description', 'Amount', 'Account']
+    const rows = allTx.map(tx => {
+      const acc = accounts.find(a => a.id === tx.accountId)
+      return [tx.date, tx.type, tx.category, tx.description, tx.amount.toString(), acc?.name || '']
+    })
+    const csvContent = [headers.join(','), ...rows.map(r => r.map(c => c.includes(',') ? `"${c}"` : c).join(','))].join('\n')
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `PennyFlow_Export_${new Date().toISOString().split('T')[0]}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [])
+
+  // Export transactions as Excel
+  const handleExportExcel = useCallback(async () => {
+    const allTx = await db.transactions.toArray()
+    const accounts = await db.accounts.toArray()
+    const data = allTx.map(tx => {
+      const acc = accounts.find(a => a.id === tx.accountId)
+      return { Date: tx.date, Type: tx.type, Category: tx.category, Description: tx.description, Amount: tx.amount, Account: acc?.name || '' }
+    })
+    const ws = XLSX.utils.json_to_sheet(data)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Transactions')
+    XLSX.writeFile(wb, `PennyFlow_Export_${new Date().toISOString().split('T')[0]}.xlsx`)
   }, [])
 
   // Parse rows with mapping
@@ -246,8 +291,8 @@ export function CSVImport() {
   return (
     <div className="flex flex-col space-y-5 pb-28">
       <div>
-        <h1 className="text-xl font-bold tracking-tight">Import Transactions</h1>
-        <p className="text-xs text-muted-foreground">Upload CSV or bank statements to bulk-add transactions</p>
+        <h1 className="text-xl font-bold tracking-tight">Import & Export</h1>
+        <p className="text-xs text-muted-foreground">Import transactions from CSV or Excel, or export your data</p>
       </div>
 
       {/* Step Indicator */}
@@ -274,16 +319,31 @@ export function CSVImport() {
           <motion.div key="upload" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
             <label className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-border/60 bg-secondary/20 hover:bg-secondary/30 cursor-pointer transition-colors">
               <Upload className="w-8 h-8 text-muted-foreground/50 mb-3" />
-              <p className="text-sm font-semibold text-foreground">Drop CSV file or tap to select</p>
-              <p className="text-[10px] text-muted-foreground mt-1">Supports expense apps & bank statements</p>
-              <input type="file" accept=".csv,.txt" onChange={handleFileUpload} className="hidden" />
+              <p className="text-sm font-semibold text-foreground">Drop CSV or Excel file to import</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Supports .csv, .xlsx, .xls files</p>
+              <input type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleFileUpload} className="hidden" />
             </label>
 
             <div className="p-3 rounded-xl bg-secondary/30 border border-border/30 space-y-1">
               <p className="text-[10px] font-bold text-muted-foreground uppercase">Supported Formats</p>
-              <p className="text-[10px] text-muted-foreground">• Expense app exports (with Date, Category, Note, Amount, Income/Expense)</p>
-              <p className="text-[10px] text-muted-foreground">• Bank statements CSV (SBI, HDFC, ICICI, Axis, Kotak)</p>
-              <p className="text-[10px] text-muted-foreground">• Any CSV with Date, Description, Amount columns</p>
+              <p className="text-[10px] text-muted-foreground">• Excel files (.xlsx, .xls)</p>
+              <p className="text-[10px] text-muted-foreground">• CSV files (.csv) from expense apps or bank statements</p>
+              <p className="text-[10px] text-muted-foreground">• Any file with Date, Description, Amount columns</p>
+            </div>
+
+            {/* Export section */}
+            <div className="pt-2 border-t border-border/30">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Export Your Data</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={handleExportCSV} className="flex items-center justify-center gap-2 h-10 rounded-xl bg-secondary hover:bg-secondary/70 transition-colors text-[12px] font-semibold text-foreground">
+                  <Download className="w-3.5 h-3.5" />
+                  Export CSV
+                </button>
+                <button onClick={handleExportExcel} className="flex items-center justify-center gap-2 h-10 rounded-xl bg-secondary hover:bg-secondary/70 transition-colors text-[12px] font-semibold text-foreground">
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  Export Excel
+                </button>
+              </div>
             </div>
           </motion.div>
         )}

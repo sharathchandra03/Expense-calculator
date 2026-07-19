@@ -37,7 +37,7 @@ const DEFAULT_NAV_ITEMS: NavItem[] = [
   { id: 'lending', label: 'Lending', icon: Heart },
   { id: 'assets', label: 'Assets', icon: Landmark },
   // Tools
-  { id: 'csvimport', label: 'Import CSV', icon: Upload },
+  { id: 'csvimport', label: 'Import & Export', icon: Upload },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   // App
