@@ -6,9 +6,7 @@ import { BottomNav, TabType } from '@/components/layout/bottom-nav'
 import { Dashboard } from '@/components/modules/dashboard'
 import { TransactionsLedger } from '@/components/modules/transactions-ledger'
 import { AssetsTracker } from '@/components/modules/assets-tracker'
-import { ForecastEngine } from '@/components/modules/forecast-engine'
 import { Settings } from '@/components/modules/settings'
-import { SpendingIntelligence } from '@/components/modules/spending-intelligence'
 import { LendingDashboard } from '@/components/modules/lending-dashboard'
 import { GlobalSearch } from '@/components/modules/global-search'
 import { Onboarding } from '@/components/modules/onboarding'
@@ -21,22 +19,15 @@ import { GoalsDashboard } from '@/components/modules/goals-dashboard'
 import { InvestmentTracker } from '@/components/modules/investment-tracker'
 import { CustomCategories } from '@/components/modules/custom-categories'
 import { AccountManager } from '@/components/modules/account-manager'
-import { WeeklyBrief } from '@/components/modules/weekly-brief'
 import { Analytics } from '@/components/modules/analytics'
-import { AboutApp } from '@/components/modules/about-app'
 import { SplitExpenses } from '@/components/modules/split-expenses'
-import { CurrencyConverter } from '@/components/modules/currency-converter'
 import { DebtPlanner } from '@/components/modules/debt-planner'
-import { BudgetVsActual } from '@/components/modules/budget-vs-actual'
 import { ReceiptGallery } from '@/components/modules/receipt-gallery'
 import { RecurringTransactionService } from '@/services/RecurringTransactionService'
-import { Achievements } from '@/components/modules/achievements'
 import { SubscriptionTracker } from '@/components/modules/subscriptions'
-import { SharedWallets } from '@/components/modules/shared-wallets'
-import { TaxHelper } from '@/components/modules/tax-helper'
-import { NetWorthTimeline } from '@/components/modules/networth-timeline'
 import { CSVImport } from '@/components/modules/csv-import'
 import { AnimatePresence, motion } from 'framer-motion'
+import { cn } from '@/lib/utils'
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard')
@@ -151,77 +142,59 @@ export default function Home() {
 
   if (!dbReady) {
     return (
-      <div className="flex flex-1 items-center justify-center bg-[#050505] text-white">
+      <div className="flex flex-1 items-center justify-center bg-white text-foreground">
         <div className="flex flex-col items-center space-y-4">
-          <div className="w-8 h-8 rounded-full border-4 border-t-primary border-r-transparent animate-spin" />
+          <div className="w-8 h-8 rounded-full border-4 border-t-[#6d5efc] border-r-transparent border-b-transparent border-l-transparent animate-spin" />
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-            PennyFlow Initializing...
+            Loading...
           </p>
         </div>
       </div>
     )
   }
 
-  // Active module renderer with error handling
+  // Active module renderer
   const renderModule = () => {
     try {
       switch (activeTab) {
         case 'dashboard':
           return <Dashboard key="dashboard" onNavigateToTab={(tab) => handleTabChange(tab)} />
-        case 'insights':
-          return <SpendingIntelligence key="insights" />
         case 'ledger':
           return <TransactionsLedger key="ledger" onNavigateToTab={(tab) => handleTabChange(tab as any)} />
-        case 'assets':
-          return <AssetsTracker key="assets" />
-        case 'lending':
-          return <LendingDashboard key="lending" />
-        case 'bills':
-          return <BillsManager key="bills" />
+        case 'accounts':
+          return <AccountManager key="accounts" />
+        case 'analytics':
+          return <Analytics key="analytics" />
         case 'budgets':
           return <BudgetManager key="budgets" />
+        case 'bills':
+          return <BillsManager key="bills" />
+        case 'subscriptions':
+          return <SubscriptionTracker key="subscriptions" />
+        case 'goals':
+          return <GoalsDashboard key="goals" />
+        case 'debtplanner':
+          return <DebtPlanner key="debtplanner" />
+        case 'categories':
+          return <CustomCategories key="categories" />
+        case 'receipts':
+          return <ReceiptGallery key="receipts" />
+        case 'splits':
+          return <SplitExpenses key="splits" />
+        case 'investments':
+          return <InvestmentTracker key="investments" />
+        case 'lending':
+          return <LendingDashboard key="lending" />
+        case 'assets':
+          return <AssetsTracker key="assets" />
         case 'reports':
           return <FinancialReports key="reports" />
         case 'notifications':
           return <NotificationsCenter key="notifications" />
-        case 'goals':
-          return <GoalsDashboard key="goals" />
-        case 'investments':
-          return <InvestmentTracker key="investments" />
-        case 'accounts':
-          return <AccountManager key="accounts" />
-        case 'categories':
-          return <CustomCategories key="categories" />
-        case 'brief':
-          return <WeeklyBrief key="brief" />
-        case 'analytics':
-          return <Analytics key="analytics" />
-        case 'settings':
-          return <Settings key="settings" />
-        case 'about':
-          return <AboutApp key="about" />
-        case 'splits':
-          return <SplitExpenses key="splits" />
-        case 'converter':
-          return <CurrencyConverter key="converter" />
-        case 'debtplanner':
-          return <DebtPlanner key="debtplanner" />
-        case 'budgetactual':
-          return <BudgetVsActual key="budgetactual" />
-        case 'receipts':
-          return <ReceiptGallery key="receipts" />
-        case 'achievements':
-          return <Achievements key="achievements" />
-        case 'subscriptions':
-          return <SubscriptionTracker key="subscriptions" />
-        case 'sharedwallets':
-          return <SharedWallets key="sharedwallets" />
-        case 'taxhelper':
-          return <TaxHelper key="taxhelper" />
-        case 'networth':
-          return <NetWorthTimeline key="networth" />
         case 'csvimport':
           return <CSVImport key="csvimport" />
+        case 'settings':
+          return <Settings key="settings" />
         default:
           return <Dashboard key="dashboard" onNavigateToTab={(tab) => handleTabChange(tab)} />
       }
@@ -241,33 +214,36 @@ export default function Home() {
     }
   }
 
+  // Dashboard has its own full-bleed purple hero; other modules get standard padding
+  const isDashboard = activeTab === 'dashboard'
+
   return (
-    <div className="min-h-screen bg-neutral-900/10 dark:bg-black/90 flex items-center justify-center p-0 md:p-6 transition-colors duration-300">
-      {/* Desktop Container Wrapper Mockup / Mobile Fullbleed */}
-      <div className="w-full h-[100dvh] md:h-[850px] md:max-w-md md:rounded-[3rem] bg-background text-foreground md:border border-border/80 dark:border-border/40 md:shadow-2xl overflow-hidden relative flex flex-col">
+    <div className="min-h-screen bg-[#e8e8ec] flex items-center justify-center p-0 md:p-6">
+      {/* Desktop phone frame / Mobile fullbleed */}
+      <div className="w-full h-[100dvh] md:h-[860px] md:max-w-[400px] md:rounded-[2.5rem] bg-background text-foreground md:shadow-elevated overflow-hidden relative flex flex-col">
 
-        {/* Navigation: pinned top bar + slide-in sidebar + floating add button */}
-        <BottomNav
-          activeTab={activeTab}
-          setActiveTab={handleTabChange}
-          onQuickAddClick={() => setIsQuickAddOpen(true)}
-        />
-
-        {/* Scrollable content area (top bar stays pinned above it) */}
-        <div className="flex-1 w-full overflow-y-auto px-5 pt-24 pb-28">
+        {/* Scrollable content area */}
+        <div className="flex-1 w-full overflow-y-auto pb-28 bg-background">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
-              className="w-full"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className={cn("w-full", !isDashboard && "px-5 pt-6")}
             >
               {renderModule()}
             </motion.div>
           </AnimatePresence>
         </div>
+
+        {/* Navigation */}
+        <BottomNav
+          activeTab={activeTab}
+          setActiveTab={handleTabChange}
+          onQuickAddClick={() => setIsQuickAddOpen(true)}
+        />
 
         {/* Global Quick Add Dialog */}
         <QuickAddModal

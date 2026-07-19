@@ -186,6 +186,19 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
           amount: -data.amount,
         } as any)
       })
+      // Auto-detect: mark matching unpaid bill as paid
+      try {
+        const unpaidBills = await db.bills.filter(b => !b.isPaid).toArray()
+        const matchingBill = unpaidBills.find(b => 
+          b.title.toLowerCase().includes(data.description?.toLowerCase() || '') ||
+          (data.description && data.description.toLowerCase().includes(b.title.toLowerCase())) ||
+          (b.category.toLowerCase() === data.category.toLowerCase() && Math.abs(b.amount - data.amount) < 1)
+        )
+        if (matchingBill) {
+          await db.bills.update(matchingBill.id, { isPaid: true })
+        }
+      } catch {}
+
       setSubmitted(true)
       setTimeout(handleClose, 2000)
     } catch (err) {
@@ -242,6 +255,18 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
           amount: data.amount,
         } as any)
       })
+      // Auto-contribute to goals with autoSave enabled
+      try {
+        const goals = await db.goals.toArray()
+        const autoSaveGoals = goals.filter(g => g.autoSave && g.autoSaveAmount && g.currentAmount < g.targetAmount)
+        for (const goal of autoSaveGoals) {
+          const contribution = Math.min(goal.autoSaveAmount!, goal.targetAmount - goal.currentAmount)
+          if (contribution > 0) {
+            await db.goals.update(goal.id, { currentAmount: goal.currentAmount + contribution })
+          }
+        }
+      } catch {}
+
       setSubmitted(true)
       setTimeout(handleClose, 2000)
     } catch (err) {
@@ -325,9 +350,13 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-md max-h-[88vh] overflow-y-auto p-0 rounded-t-[2rem] rounded-b-none sm:rounded-[2rem]">
+        {/* Bottom-sheet grabber */}
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="h-1.5 w-10 rounded-full bg-border" />
+        </div>
         <DialogHeader>
-          <DialogClose className="absolute right-4 top-4" />
+          <DialogClose className="absolute right-4 top-4 z-10" />
         </DialogHeader>
 
         <AnimatePresence mode="wait">
@@ -337,30 +366,27 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="space-y-4"
+              className="space-y-5 px-6 pb-8 pt-2"
             >
-              <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-foreground">What are you tracking?</h2>
-                <p className="text-xs text-muted-foreground mt-1">Quick record your activities</p>
+              <div>
+                <h2 className="text-[22px] font-bold text-foreground tracking-tight">Add transaction</h2>
+                <p className="text-[13px] text-muted-foreground mt-1">What would you like to record?</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {Object.entries(MODE_CONFIG).map(([key, config]) => {
                   const Icon = config.icon
                   return (
                     <motion.button
                       key={key}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
+                      whileTap={{ scale: 0.95 }}
                       onClick={() => handleModeSelect(key as ModeType)}
-                      className={cn(
-                        "p-4 rounded-2xl border border-border/50 transition-all duration-300",
-                        "hover:border-primary/50 hover:bg-primary/5",
-                        "bg-gradient-to-br", config.color,
-                      )}
+                      className="flex flex-col items-center gap-2.5 py-4 rounded-2xl bg-secondary/60 hover:bg-secondary transition-colors"
                     >
-                      <Icon className={cn("w-6 h-6 mb-2 mx-auto", config.accent)} />
-                      <p className="text-sm font-semibold text-foreground">{config.label}</p>
+                      <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center", config.bg)}>
+                        <Icon className={cn("w-5 h-5", config.accent)} strokeWidth={2} />
+                      </div>
+                      <p className="text-[12px] font-semibold text-foreground">{config.label}</p>
                     </motion.button>
                   )
                 })}
@@ -369,19 +395,15 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
           ) : submitted ? (
             <motion.div
               key="success"
-              initial={{ opacity: 0, scale: 0.9 }}
+              initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="flex flex-col items-center justify-center py-12 space-y-4"
+              className="flex flex-col items-center justify-center py-16 px-6 space-y-3"
             >
-              <motion.div
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 0.5 }}
-                className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center"
-              >
-                <Check className="w-8 h-8 text-emerald-500" />
-              </motion.div>
-              <p className="text-lg font-bold text-foreground">Perfect!</p>
-              <p className="text-xs text-muted-foreground text-center">Your {mode} has been recorded</p>
+              <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                <Check className="w-5 h-5 text-emerald-500" />
+              </div>
+              <p className="text-[15px] font-semibold text-foreground">Saved</p>
+              <p className="text-[13px] text-muted-foreground text-center">Your {mode} has been recorded</p>
               {(mode === 'expense' || mode === 'income') && (
                 <button
                   onClick={async () => {
@@ -401,7 +423,7 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
                     }
                     handleClose()
                   }}
-                  className="mt-2 px-4 py-2 rounded-xl bg-secondary text-xs font-semibold text-foreground hover:bg-secondary/80 transition-colors border border-border/50"
+                  className="mt-3 px-4 py-2 rounded-lg bg-secondary text-[13px] font-medium text-foreground hover:bg-secondary/80 transition-colors"
                 >
                   Save as Template
                 </button>
@@ -413,17 +435,16 @@ export function QuickAddModal({ isOpen, onClose }: QuickAddModalProps) {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="space-y-4"
+              className="space-y-5 p-6"
             >
-              <button
-                onClick={handleBack}
-                className="flex items-center gap-2 text-sm text-primary hover:text-primary/80 mb-2"
-              >
-                ← Back
-              </button>
-
-              <div className="text-center mb-4">
-                <h3 className="text-xl font-bold text-foreground">Add {MODE_CONFIG[mode].label}</h3>
+              <div className="flex items-center gap-3 mb-2">
+                <button
+                  onClick={handleBack}
+                  className="text-[13px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  ← Back
+                </button>
+                <h3 className="text-[15px] font-semibold text-foreground">Add {MODE_CONFIG[mode].label}</h3>
               </div>
 
               {mode === 'expense' && <ExpenseForm form={expenseForm} onSubmit={onExpenseSubmit} accounts={accounts} />}
@@ -465,21 +486,21 @@ function ExpenseForm({ form, onSubmit, accounts }: any) {
   }
 
   return (
-    <form onSubmit={form.handleSubmit((data: any) => onSubmit({ ...data, receiptImage: receiptPreview }))} className="space-y-4">
+    <form onSubmit={form.handleSubmit((data: any) => onSubmit({ ...data, receiptImage: receiptPreview }))} className="space-y-5">
       <div>
-        <label className="text-xs font-semibold text-muted-foreground uppercase">Amount</label>
+        <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Amount</label>
         <Input
           type="number"
           placeholder="0.00"
           {...form.register('amount')}
-          className="mt-1 text-lg"
+          className="text-lg h-12"
           step="0.01"
         />
-        {form.formState.errors.amount && <p className="text-xs text-red-500 mt-1">{form.formState.errors.amount.message}</p>}
+        {form.formState.errors.amount && <p className="text-[11px] text-destructive mt-1">{form.formState.errors.amount.message}</p>}
       </div>
 
       <div>
-        <label className="text-xs font-semibold text-muted-foreground uppercase">Category</label>
+        <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Category</label>
         <CategorySelect
           type="expense"
           value={form.watch('category') || ''}
@@ -490,7 +511,7 @@ function ExpenseForm({ form, onSubmit, accounts }: any) {
       </div>
 
       <div>
-        <label className="text-xs font-semibold text-muted-foreground uppercase">Account</label>
+        <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Account</label>
         <AccountSelect
           value={form.watch('accountId') || ''}
           onChange={(val) => form.setValue('accountId', val, { shouldValidate: true })}
@@ -500,14 +521,14 @@ function ExpenseForm({ form, onSubmit, accounts }: any) {
       </div>
 
       <div>
-        <label className="text-xs font-semibold text-muted-foreground uppercase">Description</label>
-        <Input placeholder="e.g., Coffee at Starbucks" {...form.register('description')} className="mt-1" />
-        {form.formState.errors.description && <p className="text-xs text-red-500 mt-1">{form.formState.errors.description.message}</p>}
+        <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Note</label>
+        <Input placeholder="Add a note" {...form.register('description')} />
+        {form.formState.errors.description && <p className="text-[11px] text-destructive mt-1">{form.formState.errors.description.message}</p>}
       </div>
 
       <div>
-        <label className="text-xs font-semibold text-muted-foreground uppercase">Date</label>
-        <Input type="date" {...form.register('date')} className="mt-1" />
+        <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Date</label>
+        <Input type="date" {...form.register('date')} />
       </div>
 
       {/* Receipt Attachment */}

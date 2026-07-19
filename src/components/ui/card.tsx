@@ -8,33 +8,16 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
 
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
   ({ className, outerClassName, noBezel = false, children, ...props }, ref) => {
-    if (noBezel) {
-      return (
-        <div
-          ref={ref}
-          className={cn(
-            "rounded-2xl border border-border bg-card text-card-foreground shadow-sm overflow-hidden",
-            className
-          )}
-          {...props}
-        >
-          {children}
-        </div>
-      );
-    }
-
     return (
-      <div className={cn("double-bezel-outer", outerClassName)}>
-        <div
-          ref={ref}
-          className={cn(
-            "double-bezel-inner bg-card text-card-foreground p-5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] border border-border/30 overflow-hidden",
-            className
-          )}
-          {...props}
-        >
-          {children}
-        </div>
+      <div
+        ref={ref}
+        className={cn(
+          "rounded-2xl bg-card text-card-foreground border border-border shadow-sm overflow-hidden",
+          className
+        )}
+        {...props}
+      >
+        {children}
       </div>
     );
   }
@@ -81,7 +64,7 @@ const CardContent = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn("p-0", className)} {...props} />
+  <div ref={ref} className={cn("p-5", className)} {...props} />
 ))
 CardContent.displayName = "CardContent"
 
@@ -91,7 +74,7 @@ const CardFooter = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex items-center p-0 mt-4 border-t border-border/40 pt-4", className)}
+    className={cn("flex items-center px-5 pb-5 mt-4 border-t border-border/40 pt-4", className)}
     {...props}
   />
 ))

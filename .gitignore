@@ -23,6 +23,8 @@
 # misc
 .DS_Store
 *.pem
+Thumbs.db
+Desktop.ini
 
 # debug
 npm-debug.log*
@@ -30,8 +32,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -40,7 +43,20 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Generated documentation/report files (keep locally, not in repo)
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Generated docs & reports (local only, not needed in repo)
 ARCHITECTURE_DIAGRAM.md
 BILLS_USER_GUIDE.md
 COMPLETION_REPORT.md
@@ -52,6 +68,7 @@ FEATURES_GUIDE.md
 FIX_SUMMARY.md
 IMPLEMENTATION_CHECKLIST.md
 IMPLEMENTATION_COMPLETE.md
+IMPLEMENTATION_PROGRESS.md
 IMPROVEMENTS_SUMMARY.md
 LIVE_FEATURES_GUIDE.md
 NEW_FEATURES_SUMMARY.md
@@ -65,11 +82,17 @@ SESSION_SUMMARY.md
 TEST_WORKFLOW.md
 NAVIGATION_UPDATE.md
 
-# Project planning & presentation docs (local only)
+# Project planning docs (local only)
 plan.md
 PRESENTATION.md
 about_project.md
 implementation_plan.md
 
+# Database schema (keep in repo only if needed for deployment)
+supabase-schema.sql
+
 # Skills folder (local AI skill references)
 /Skills/
+
+# Kiro AI
+.kiro/

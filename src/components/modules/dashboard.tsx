@@ -5,11 +5,10 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, Transaction, Lending, Asset, Goal, Bill, generateUUID, syncAccountToAsset } from '@/db/schema'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { formatCurrency, cn } from '@/lib/utils'
-import { ArrowUpRight, ArrowDownRight, Sparkles, Target, Calendar, ArrowRight, ShieldCheck, AlertCircle, ShoppingBag, Plus, Zap, TrendingUp, DollarSign, Heart, Clock, GripVertical, UtensilsCrossed, Car, ShoppingCart, Receipt, MoreHorizontal, X, Check } from 'lucide-react'
+import { ArrowUpRight, ArrowDownRight, Sparkles, Target, Calendar, ArrowRight, ShieldCheck, AlertCircle, ShoppingBag, Plus, Zap, TrendingUp, DollarSign, Heart, Clock, GripVertical, UtensilsCrossed, Car, ShoppingCart, Receipt, MoreHorizontal, X, Check, Settings } from 'lucide-react'
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import { HealthScoreService, HealthScoreBreakdown } from '@/services/HealthScoreService'
 import { SyncCard } from '@/components/ui/sync-card'
-import { SmartQuickAdd } from '@/components/modules/smart-quick-add'
 import { useUndo } from '@/components/ui/undo-toast'
 import { SmartDefaultsService } from '@/services/SmartDefaultsService'
 import { SmartInsightsService, Insight } from '@/services/SmartInsightsService'
@@ -47,6 +46,8 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
   // Quick-add state
   const [quickAddCategory, setQuickAddCategory] = useState<string | null>(null)
   const [quickAddAmount, setQuickAddAmount] = useState('')
+  const [quickAddDate, setQuickAddDate] = useState(new Date().toISOString().split('T')[0])
+  const [quickAddTime, setQuickAddTime] = useState(new Date().toTimeString().slice(0, 5))
   const [quickAddSaving, setQuickAddSaving] = useState(false)
   const [quickAddSuccess, setQuickAddSuccess] = useState(false)
   const quickAddInputRef = useRef<HTMLInputElement>(null)
@@ -140,7 +141,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
       await db.transaction('rw', [db.transactions, db.accounts, db.assets, db.systemLogs], async () => {
         await db.transactions.add({
           id: txId,
-          date: todayStr,
+          date: quickAddDate,
           type: 'expense',
           category: quickAddCategory,
           amount,
@@ -186,6 +187,8 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
       setTimeout(() => {
         setQuickAddCategory(null)
         setQuickAddAmount('')
+        setQuickAddDate(new Date().toISOString().split('T')[0])
+        setQuickAddTime(new Date().toTimeString().slice(0, 5))
         setQuickAddSuccess(false)
         setQuickAddSaving(false)
       }, 1200)
@@ -323,169 +326,203 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
   const totalLent = metrics.totalDebt === 0 ? 0 : metrics.totalDebt
   const activeLendingCount = safeLending.filter(l => l.status === 'active').length
 
+  // Month income / net for hero trend line
+  const monthIncomeTotal = safeAllTransactions.filter(tx => {
+    const d = new Date(tx.date)
+    return tx.type === 'income' && d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear()
+  }).reduce((sum, tx) => sum + tx.amount, 0)
+  const monthNet = monthIncomeTotal - monthlyBudgetData.monthlySpent
+  const monthTrendPct = monthIncomeTotal > 0 ? Math.round((monthNet / monthIncomeTotal) * 100) : 0
+
   return (
-    <div className="flex flex-col space-y-4 pb-28">
-      {/* Background Mesh Orbs */}
-      <div className="absolute top-0 left-0 right-0 h-64 -z-10 bg-radial from-primary/10 via-transparent to-transparent opacity-60 dark:opacity-40 blur-3xl pointer-events-none" />
+    <div className="flex flex-col pb-24 bg-background">
+      {/* === HERO + REPORT COMPOSITION === */}
+      <div className="px-5 pt-10">
+        {/* Purple hero card — same horizontal margins as report card */}
+        <div className="hero-gradient px-6 pt-10 pb-8 rounded-[1.75rem] text-white">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[13px] font-medium text-white/70">Total savings</span>
+              <Sparkles className="w-3.5 h-3.5 text-white/50" />
+            </div>
+            <button
+              onClick={() => onNavigateToTab('settings')}
+              className="h-9 w-9 rounded-full bg-white/12 flex items-center justify-center"
+              aria-label="Settings"
+            >
+              <Settings className="w-4 h-4 text-white/80" />
+            </button>
+          </div>
 
-      {/* Sync prompt */}
-      <SyncCard compact />
-
-      {/* === MONTHLY SUMMARY HEADER === */}
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between p-4 rounded-2xl bg-card border border-border/50"
-      >
-        <div className="text-center flex-1">
-          <p className="text-[9px] font-bold text-muted-foreground uppercase">Expenses</p>
-          <p className="text-base font-bold text-red-400 mt-0.5">
-            {formatCurrency(monthlyBudgetData.monthlySpent)}
-          </p>
-        </div>
-        <div className="w-px h-10 bg-border/50" />
-        <div className="text-center flex-1">
-          <p className="text-[9px] font-bold text-muted-foreground uppercase">Income</p>
-          <p className="text-base font-bold text-emerald-500 mt-0.5">
-            {formatCurrency(safeAllTransactions.filter(tx => {
-              const d = new Date(tx.date)
-              return tx.type === 'income' && d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear()
-            }).reduce((sum, tx) => sum + tx.amount, 0))}
-          </p>
-        </div>
-        <div className="w-px h-10 bg-border/50" />
-        <div className="text-center flex-1">
-          <p className="text-[9px] font-bold text-muted-foreground uppercase">Net</p>
+          {/* Balance */}
           {(() => {
-            const monthIncome = safeAllTransactions.filter(tx => {
-              const d = new Date(tx.date)
-              return tx.type === 'income' && d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear()
-            }).reduce((sum, tx) => sum + tx.amount, 0)
-            const net = monthIncome - monthlyBudgetData.monthlySpent
-            return <p className={cn("text-base font-bold mt-0.5", net >= 0 ? "text-emerald-500" : "text-red-400")}>{net >= 0 ? '+' : ''}{formatCurrency(net)}</p>
+            const full = formatCurrency(netWorth)
+            const dot = full.lastIndexOf('.')
+            const main = dot > -1 ? full.slice(0, dot) : full
+            const dec = dot > -1 ? full.slice(dot) : ''
+            return (
+              <h1 className="text-[42px] leading-none font-bold tracking-tight">
+                {main}<span className="text-[26px] text-white/60 font-semibold">{dec}</span>
+              </h1>
+            )
           })()}
+
+          {/* Trend line */}
+          <p className={cn("text-[12px] font-medium mt-2.5", monthNet >= 0 ? "text-emerald-300" : "text-rose-300")}>
+            {monthNet >= 0 ? '+' : ''}{monthTrendPct}% · {monthNet >= 0 ? 'You crushed it this month. Keep going!' : 'Spending outpaced income this month.'}
+          </p>
+
+          {/* Account pills */}
+          <div className="flex items-center gap-2 mt-5 overflow-x-auto pb-0.5">
+            {safeAccounts.slice(0, 5).map(acc => (
+              <button
+                key={acc.id}
+                onClick={() => onNavigateToTab('accounts')}
+                className="flex-shrink-0 px-3.5 py-2 rounded-xl bg-white/12 text-[11px] font-semibold text-white/90 whitespace-nowrap"
+              >
+                {acc.name}
+              </button>
+            ))}
+            <button
+              onClick={() => onNavigateToTab('accounts')}
+              className="flex-shrink-0 h-9 w-9 rounded-xl bg-white/12 flex items-center justify-center"
+              aria-label="Add account"
+            >
+              <Plus className="w-4 h-4 text-white/80" />
+            </button>
+          </div>
         </div>
-      </motion.div>
 
-      {/* === QUICK STATS ROW === */}
-      <div className="grid grid-cols-3 gap-2">
-        <button
-          onClick={() => onNavigateToTab('analytics')}
-          className="p-3 rounded-xl bg-card border border-border/40 hover:border-primary/30 transition-all text-center"
-        >
-          <p className="text-sm font-bold text-foreground">
-            {formatCurrency(Math.round(monthlyBudgetData.monthlySpent / Math.max(1, new Date().getDate())))}
-          </p>
-          <p className="text-[9px] text-muted-foreground font-semibold mt-0.5">/day avg</p>
-        </button>
-        <button
-          onClick={() => onNavigateToTab('achievements')}
-          className="p-3 rounded-xl bg-card border border-border/40 hover:border-primary/30 transition-all text-center"
-        >
-          <p className="text-sm font-bold text-foreground">
-            {(() => {
-              // Quick streak calc — same logic as achievements
-              const budgetLimit = safeBudgets.filter(b => b.isActive && b.period === 'monthly').reduce((s, b) => s + b.limit, 0)
-              if (budgetLimit === 0) return '—'
-              const dailyLimit = budgetLimit / 30
-              let streak = 0
-              for (let i = 0; i < 30; i++) {
-                const d = new Date(); d.setDate(d.getDate() - i)
-                const dateStr = d.toISOString().split('T')[0]
-                const daySpent = safeAllTransactions.filter(t => t.type === 'expense' && t.date === dateStr).reduce((s, t) => s + t.amount, 0)
-                if (daySpent <= dailyLimit || daySpent === 0) streak++; else break
-              }
-              return `${streak}🔥`
-            })()}
-          </p>
-          <p className="text-[9px] text-muted-foreground font-semibold mt-0.5">streak</p>
-        </button>
-        <button
-          onClick={() => onNavigateToTab('bills')}
-          className="p-3 rounded-xl bg-card border border-border/40 hover:border-primary/30 transition-all text-center"
-        >
-          <p className="text-sm font-bold text-foreground">
-            {safeBills.filter(b => {
-              if (b.isPaid) return false
-              const due = new Date(b.dueDate)
-              const now = new Date()
-              const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
-              return due >= now && due <= weekLater
-            }).length} bills
-          </p>
-          <p className="text-[9px] text-muted-foreground font-semibold mt-0.5">due soon</p>
-        </button>
-      </div>
-
-      {/* === QUICK ACTION BAR === */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none">
-        {[
-          { label: 'Ledger', emoji: '📒', tab: 'ledger' },
-          { label: 'Analytics', emoji: '📊', tab: 'analytics' },
-          { label: 'Categories', emoji: '🏷️', tab: 'categories' },
-          { label: 'Receipts', emoji: '🧾', tab: 'receipts' },
-          { label: 'Recurring', emoji: '🔄', tab: 'subscriptions' },
-        ].map(item => (
-          <button
-            key={item.tab}
-            onClick={() => onNavigateToTab(item.tab)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-secondary/60 border border-border/40 hover:bg-secondary hover:border-primary/30 transition-all flex-shrink-0"
-          >
-            <span className="text-sm">{item.emoji}</span>
-            <span className="text-[10px] font-semibold text-foreground whitespace-nowrap">{item.label}</span>
+        {/* Report card — overlaps hero, same horizontal grid */}
+        <div className="card-surface p-5 mt-4 relative z-10">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[15px] font-semibold text-foreground">Report this month</h3>
+          <button onClick={() => onNavigateToTab('analytics')} className="text-[12px] font-medium text-accent-foreground">
+            See details
           </button>
-        ))}
-      </div>
+        </div>
 
-      {/* === QUICK ADD CATEGORY BUTTONS (core 2-tap logging) === */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Quick Add</p>
+        {/* Summary pills */}
+        <div className="flex items-center gap-2 mb-5">
+          <div className="px-3 py-1.5 rounded-full bg-secondary text-[11px] font-semibold text-foreground">All</div>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+            <span className="text-[11px] text-muted-foreground">Spent</span>
+            <span className="text-[11px] font-semibold text-foreground">{formatCurrency(monthlyBudgetData.monthlySpent)}</span>
+          </div>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span className="text-[11px] text-muted-foreground">Income</span>
+            <span className="text-[11px] font-semibold text-foreground">{formatCurrency(monthIncomeTotal)}</span>
+          </div>
+        </div>
+
+        {/* Daily spend sparkline (last 14 days) */}
+        {(() => {
+          const days = 14
+          const today = new Date()
+          const series: number[] = []
+          for (let i = days - 1; i >= 0; i--) {
+            const d = new Date(today); d.setDate(d.getDate() - i)
+            const ds = d.toISOString().split('T')[0]
+            const spent = safeAllTransactions.filter(t => t.type === 'expense' && t.date === ds).reduce((s, t) => s + t.amount, 0)
+            series.push(spent)
+          }
+          const max = Math.max(...series, 1)
+          const W = 300, H = 72
+          const step = W / (days - 1)
+          const pts = series.map((v, i) => `${i * step},${H - (v / max) * (H - 8) - 4}`).join(' ')
+          const areaPts = `0,${H} ${pts} ${W},${H}`
+          return (
+            <div className="relative">
+              <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-[72px]">
+                <defs>
+                  <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--ring)" stopOpacity="0.18" />
+                    <stop offset="100%" stopColor="var(--ring)" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <polygon points={areaPts} fill="url(#sparkFill)" />
+                <polyline points={pts} fill="none" stroke="var(--ring)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <div className="flex justify-between mt-1.5">
+                <span className="text-[10px] text-muted-foreground">14 days ago</span>
+                <span className="text-[10px] text-muted-foreground">Today</span>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Budget bar */}
+        {monthlyBudgetData.hasBudget && (
+          <div className="mt-4 pt-4 border-t border-border/60">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11px] text-muted-foreground">Budget used</p>
+              <p className="text-[11px] font-semibold text-foreground">{Math.round(monthlyBudgetData.percentUsed)}%</p>
+            </div>
+            <div className="h-2 rounded-full bg-secondary overflow-hidden">
+              <div
+                className={cn("h-full rounded-full transition-all duration-500",
+                  monthlyBudgetData.percentUsed > 90 ? "bg-rose-500" : monthlyBudgetData.percentUsed > 70 ? "bg-amber-500" : "bg-emerald-500")}
+                style={{ width: `${Math.min(100, monthlyBudgetData.percentUsed)}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>{/* end report card */}
+      </div>{/* end hero + report composition */}
+
+      {/* Remaining content — same px-5 margin */}
+      <div className="px-5 pt-4 space-y-4">
+        <SyncCard compact />
+
+      {/* === QUICK ADD === */}
+      <div className="card-surface p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[15px] font-semibold text-foreground">Quick add</h3>
           {todaySpent > 0 && (
-            <p className="text-[10px] text-muted-foreground">Today: <span className="font-bold text-foreground">{formatCurrency(todaySpent)}</span></p>
+            <p className="text-[12px] text-muted-foreground">Today <span className="font-semibold text-foreground">{formatCurrency(todaySpent)}</span></p>
           )}
         </div>
 
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-5 gap-3 justify-items-center">
           {QUICK_ADD_CATEGORIES.map(cat => {
             const Icon = cat.icon
             return (
               <motion.button
                 key={cat.id}
-                whileTap={{ scale: 0.92 }}
+                whileTap={{ scale: 0.94 }}
                 onClick={() => {
                   setQuickAddCategory(cat.id)
                   setQuickAddAmount('')
                   setQuickAddSuccess(false)
                 }}
-                className={cn(
-                  "flex flex-col items-center gap-1.5 p-3 rounded-2xl border border-border/40 transition-all",
-                  quickAddCategory === cat.id
-                    ? "bg-primary/10 border-primary/40 shadow-sm"
-                    : "bg-card hover:bg-secondary/60"
-                )}
+                className="flex flex-col items-center gap-2 py-2 rounded-2xl transition-colors"
               >
-                <div className={cn("w-8 h-8 rounded-xl flex items-center justify-center", cat.bg)}>
-                  <Icon className={cn("w-4 h-4", cat.color)} />
+                <div className={cn(
+                  "w-12 h-12 rounded-2xl flex items-center justify-center transition-all",
+                  quickAddCategory === cat.id ? "ring-2 ring-ring ring-offset-2 ring-offset-card" : "",
+                  cat.bg
+                )}>
+                  <Icon className={cn("w-5 h-5", cat.color)} />
                 </div>
-                <span className="text-[10px] font-semibold text-foreground leading-tight">{cat.label}</span>
+                <span className="text-[10px] font-medium text-muted-foreground">{cat.label}</span>
               </motion.button>
             )
           })}
-          {/* +More button opens the full quick-add modal (already exists via FAB) */}
           <motion.button
-            whileTap={{ scale: 0.92 }}
-            onClick={() => onNavigateToTab('ledger')}
-            className="flex flex-col items-center gap-1.5 p-3 rounded-2xl border border-border/40 bg-card hover:bg-secondary/60 transition-all"
+            whileTap={{ scale: 0.94 }}
+            onClick={() => onNavigateToTab('categories')}
+            className="flex flex-col items-center gap-2 py-2 rounded-2xl transition-colors"
           >
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-secondary">
-              <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-secondary">
+              <MoreHorizontal className="w-5 h-5 text-muted-foreground" />
             </div>
-            <span className="text-[10px] font-semibold text-muted-foreground leading-tight">More</span>
+            <span className="text-[10px] font-medium text-muted-foreground">More</span>
           </motion.button>
         </div>
 
-        {/* Inline Quick-Add Amount Input */}
+        {/* Inline Quick-Add Form */}
         <AnimatePresence>
           {quickAddCategory && !quickAddSuccess && (
             <motion.div
@@ -495,147 +532,167 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
               transition={{ duration: 0.2 }}
               className="overflow-hidden"
             >
-              <div className="flex items-center gap-2 p-3 rounded-2xl bg-secondary/50 border border-border/50">
-                <div className="flex-1 relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-medium">₹</span>
-                  <input
-                    ref={quickAddInputRef}
-                    type="number"
-                    inputMode="numeric"
-                    placeholder="Amount"
-                    value={quickAddAmount}
-                    onChange={(e) => setQuickAddAmount(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleQuickAddSave()
-                      if (e.key === 'Escape') setQuickAddCategory(null)
-                    }}
-                    className="w-full h-10 pl-8 pr-3 rounded-xl bg-background border border-border/70 text-sm font-semibold text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary/60"
-                  />
+              <div className="mt-4 space-y-3">
+                {/* Amount row */}
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[15px] text-muted-foreground font-medium">₹</span>
+                    <input
+                      ref={quickAddInputRef}
+                      type="number"
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={quickAddAmount}
+                      onChange={(e) => setQuickAddAmount(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleQuickAddSave()
+                        if (e.key === 'Escape') setQuickAddCategory(null)
+                      }}
+                      className="w-full h-12 pl-9 pr-3 rounded-2xl bg-secondary text-[15px] font-semibold text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-ring/30"
+                    />
+                  </div>
+                  <button
+                    onClick={handleQuickAddSave}
+                    disabled={quickAddSaving || !quickAddAmount || Number(quickAddAmount) <= 0}
+                    className="h-12 px-5 rounded-2xl bg-primary text-primary-foreground font-semibold text-[14px] disabled:opacity-30 transition-opacity"
+                  >
+                    {quickAddSaving ? '...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => setQuickAddCategory(null)}
+                    className="h-12 w-12 flex items-center justify-center rounded-2xl bg-secondary hover:bg-secondary/70 transition-colors flex-shrink-0"
+                  >
+                    <X className="w-4 h-4 text-muted-foreground" />
+                  </button>
                 </div>
-                <motion.button
-                  whileTap={{ scale: 0.9 }}
-                  onClick={handleQuickAddSave}
-                  disabled={quickAddSaving || !quickAddAmount || Number(quickAddAmount) <= 0}
-                  className="h-10 px-4 rounded-xl bg-primary text-primary-foreground font-semibold text-xs disabled:opacity-40 transition-opacity"
-                >
-                  {quickAddSaving ? '...' : 'Add'}
-                </motion.button>
-                <button
-                  onClick={() => setQuickAddCategory(null)}
-                  className="h-10 w-10 flex items-center justify-center rounded-xl hover:bg-secondary transition-colors"
-                >
-                  <X className="w-4 h-4 text-muted-foreground" />
-                </button>
+
+                {/* Date and Time row */}
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 relative">
+                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="date"
+                      value={quickAddDate}
+                      onChange={(e) => setQuickAddDate(e.target.value)}
+                      className="w-full h-11 pl-9 pr-3 rounded-xl bg-secondary text-[13px] font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30"
+                    />
+                  </div>
+                  <div className="flex-1 relative">
+                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="time"
+                      value={quickAddTime}
+                      onChange={(e) => setQuickAddTime(e.target.value)}
+                      className="w-full h-11 pl-9 pr-3 rounded-xl bg-secondary text-[13px] font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30"
+                    />
+                  </div>
+                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Quick-add success feedback */}
+        {/* Success feedback */}
         <AnimatePresence>
           {quickAddSuccess && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="flex items-center gap-2 p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30"
+              className="flex items-center gap-2 mt-4 p-3 rounded-2xl bg-emerald-500/10"
             >
-              <Check className="w-4 h-4 text-emerald-500" />
-              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                Expense logged!
-              </span>
+              <Check className="w-4 h-4 text-positive" />
+              <span className="text-[13px] font-semibold text-positive">Expense logged!</span>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Today's Transactions */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold tracking-tight text-foreground">Today</h3>
-          {todayTransactions.length > 0 && (
-            <button onClick={() => onNavigateToTab('ledger')} className="text-xs text-primary font-semibold flex items-center gap-1">
-              All <ArrowRight className="w-3 h-3" />
-            </button>
-          )}
-        </div>
+      {/* === RECENT TRANSACTION === */}
+      <div className="card-surface p-5">
+        <h3 className="text-[15px] font-semibold text-foreground mb-4">Recent transaction</h3>
 
-        {todayTransactions.length > 0 ? (
-          <div className="space-y-2">
-            {todayTransactions.slice(0, 6).map((tx) => (
-              <motion.div
-                key={tx.id}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="flex items-center justify-between p-3 rounded-xl bg-card border border-border/50"
-              >
-                <div className="flex items-center space-x-3">
-                  <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 text-lg", getCategoryConfig(tx.category).bg)}>
-                    {getCategoryConfig(tx.category).emoji}
+        {safeTransactions.length > 0 ? (
+          <div>
+            {safeTransactions.slice(0, 4).map((tx) => {
+              const cfg = getCategoryConfig(tx.category)
+              const acct = safeAccounts.find(a => a.id === tx.accountId)
+              const d = new Date(tx.date)
+              return (
+                <div key={tx.id} className="flex items-center gap-3 py-3 border-b border-border/50 last:border-0">
+                  <div className={cn("w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0", cfg.bg)}>
+                    {cfg.emoji}
                   </div>
-                  <div>
-                    <p className="text-xs font-bold text-foreground">{tx.description || tx.category}</p>
-                    <p className="text-[10px] text-muted-foreground capitalize">{tx.category}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14px] font-semibold text-foreground truncate">{tx.description || tx.category}</p>
+                    <p className="text-[12px] text-muted-foreground truncate capitalize">
+                      {cfg.label} · {d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className={cn("text-[14px] font-bold", tx.type === 'income' ? "text-positive" : "text-negative")}>
+                      {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
+                    </p>
+                    {acct && <p className="text-[11px] text-muted-foreground mt-0.5">{acct.name}</p>}
                   </div>
                 </div>
-                <p className={cn("text-xs font-bold", tx.type === 'income' ? "text-emerald-500" : "text-foreground")}>
-                  {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
-                </p>
-              </motion.div>
-            ))}
+              )
+            })}
+
+            <button
+              onClick={() => onNavigateToTab('ledger')}
+              className="w-full mt-4 py-3 rounded-2xl bg-secondary text-[13px] font-semibold text-foreground hover:bg-secondary/70 transition-colors"
+            >
+              See all transaction
+            </button>
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-secondary/20 border border-dashed border-border/50 text-center">
-            <Sparkles className="h-6 w-6 text-muted-foreground/40 mb-2" />
-            <p className="text-xs font-semibold text-muted-foreground">Nothing logged today</p>
-            <p className="text-[10px] text-muted-foreground/70 mt-0.5">Tap a category above to log an expense</p>
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <p className="text-[13px] text-muted-foreground">No transactions yet</p>
+            <p className="text-[11px] text-muted-foreground/60 mt-1">Tap the + button to log your first expense</p>
           </div>
         )}
       </div>
 
-      {/* === END PHASE 0.1 === */}
-
-      {/* Phase 2.7: Smart Insights */}
+      {/* Smart Insights */}
       {smartInsights.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Insights</p>
+        <div className="space-y-2.5">
+          <p className="text-[13px] font-semibold text-foreground">Insights</p>
           {smartInsights.map(insight => (
-            <motion.div
+            <div
               key={insight.id}
-              initial={{ opacity: 0, x: -6 }}
-              animate={{ opacity: 1, x: 0 }}
               className={cn(
-                "flex items-start gap-3 p-3 rounded-2xl border",
-                insight.severity === 'warning' ? "bg-amber-500/5 border-amber-500/20" :
-                insight.severity === 'positive' ? "bg-emerald-500/5 border-emerald-500/20" :
-                "bg-secondary/30 border-border/50"
+                "flex items-start gap-3 p-4 rounded-2xl",
+                insight.severity === 'warning' ? "bg-amber-500/10" :
+                insight.severity === 'positive' ? "bg-emerald-500/10" :
+                "card-surface"
               )}
             >
               <div className={cn(
-                "w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5",
-                insight.severity === 'warning' ? "bg-amber-500/10" :
-                insight.severity === 'positive' ? "bg-emerald-500/10" :
-                "bg-primary/10"
+                "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                insight.severity === 'warning' ? "bg-amber-500/20" :
+                insight.severity === 'positive' ? "bg-emerald-500/20" :
+                "bg-secondary"
               )}>
-                {insight.severity === 'warning' && <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
-                {insight.severity === 'positive' && <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />}
-                {insight.severity === 'info' && <Sparkles className="w-3.5 h-3.5 text-primary" />}
+                {insight.severity === 'warning' && <AlertCircle className="w-4 h-4 text-amber-500" />}
+                {insight.severity === 'positive' && <TrendingUp className="w-4 h-4 text-positive" />}
+                {insight.severity === 'info' && <Sparkles className="w-4 h-4 text-accent-foreground" />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-bold text-foreground">{insight.title}</p>
-                <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">{insight.message}</p>
+                <p className="text-[13px] font-semibold text-foreground">{insight.title}</p>
+                <p className="text-[12px] text-muted-foreground leading-relaxed mt-0.5">{insight.message}</p>
               </div>
-            </motion.div>
+            </div>
           ))}
         </div>
       )}
 
-      {/* Overview Section Divider */}
-      <div className="pt-2 flex items-center justify-between">
-        <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">Overview</p>
+      {/* Overview Section */}
+      <div className="pt-1 flex items-center justify-between">
+        <p className="text-[13px] font-semibold text-foreground">Overview</p>
         <button
           onClick={() => setShowDashSettings(!showDashSettings)}
-          className="text-[10px] text-primary font-semibold"
+          className="text-[12px] text-accent-foreground font-medium"
         >
           {showDashSettings ? 'Done' : 'Customize'}
         </button>
@@ -879,6 +936,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
           <p className="text-[10px] text-muted-foreground/70 mt-1">Add your first transaction using the + button</p>
         </div>
       )}
+      </div>{/* end content wrapper */}
     </div>
   )
 }
@@ -916,9 +974,19 @@ function HealthCardInteractive({ healthScore, metrics, onNavigate }: { healthSco
             </div>
           </div>
           <div className="relative w-20 h-20 flex-shrink-0">
-            <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
-              <circle cx="60" cy="60" r="54" className="stroke-muted/30" strokeWidth="8" fill="none" />
-              <circle cx="60" cy="60" r="54" className="stroke-primary transition-all duration-700" strokeWidth="8" fill="none" strokeDasharray={`${(healthScore.score / 100) * 2 * Math.PI * 54} ${2 * Math.PI * 54}`} strokeLinecap="round" />
+            <svg viewBox="0 0 120 120" className="w-full h-full" style={{ transform: 'rotate(-90deg)' }}>
+              {/* Background track */}
+              <circle cx="60" cy="60" r="50" stroke="#e8e8ed" strokeWidth="10" fill="none" />
+              {/* Progress arc */}
+              <circle
+                cx="60" cy="60" r="50"
+                stroke="#6d5efc"
+                strokeWidth="10"
+                fill="none"
+                strokeLinecap="round"
+                strokeDasharray={`${(healthScore.score / 100) * 2 * Math.PI * 50} ${2 * Math.PI * 50}`}
+                className="transition-all duration-700"
+              />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-xl">{HealthScoreService.getHealthEmoji(healthScore.score)}</span>

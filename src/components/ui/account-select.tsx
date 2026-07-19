@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, generateUUID } from '@/db/schema'
-import { cn } from '@/lib/utils'
+import { cn, formatCurrency } from '@/lib/utils'
 import { ChevronDown, Check, Plus, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -116,27 +116,40 @@ export function AccountSelect({ value, onChange, placeholder, className, error }
             transition={{ duration: 0.15 }}
             className="mt-1 rounded-2xl border border-border/60 bg-card shadow-lg overflow-hidden"
           >
-            <div className="max-h-[220px] overflow-y-auto p-1.5">
+            <div className="max-h-[260px] overflow-y-auto p-1.5">
               {safeAccounts.length > 0 ? (
-                safeAccounts.map((acc) => (
-                  <button
-                    key={acc.id}
-                    type="button"
-                    onClick={() => handleSelect(acc.id)}
-                    className={cn(
-                      "flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-[13px] font-medium transition-colors",
-                      acc.id === value
-                        ? "bg-primary/10 text-primary"
-                        : "text-foreground hover:bg-secondary/80 active:bg-secondary"
-                    )}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground uppercase font-semibold">{acc.type}</span>
-                      <span>{acc.name}</span>
-                    </div>
-                    {acc.id === value && <Check className="h-4 w-4 text-primary flex-shrink-0" />}
-                  </button>
-                ))
+                safeAccounts.map((acc) => {
+                  const isSel = acc.id === value
+                  const typeColors: Record<string, string> = {
+                    bank: 'bg-blue-500/12 text-blue-600',
+                    cash: 'bg-emerald-500/12 text-emerald-600',
+                    card: 'bg-purple-500/12 text-purple-600',
+                    investment: 'bg-amber-500/12 text-amber-600',
+                    crypto: 'bg-orange-500/12 text-orange-600',
+                  }
+                  const initials = acc.name.slice(0, 2).toUpperCase()
+                  return (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => handleSelect(acc.id)}
+                      className={cn(
+                        "relative flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors overflow-hidden",
+                        isSel ? "bg-accent" : "hover:bg-secondary/70 active:bg-secondary"
+                      )}
+                    >
+                      {isSel && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-emerald-500" />}
+                      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center text-[12px] font-bold flex-shrink-0", typeColors[acc.type] || 'bg-secondary text-muted-foreground')}>
+                        {initials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={cn("text-[14px] font-semibold truncate", isSel ? "text-accent-foreground" : "text-foreground")}>{acc.name}</p>
+                        <p className="text-[11px] text-muted-foreground capitalize">{acc.type}</p>
+                      </div>
+                      <p className="text-[14px] font-bold text-foreground flex-shrink-0">{formatCurrency(acc.balance)}</p>
+                    </button>
+                  )
+                })
               ) : (
                 <p className="text-xs text-muted-foreground text-center py-3">No accounts yet. Add one below.</p>
               )}

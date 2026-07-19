@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { db } from '@/db/schema'
+import { db, getProfile, saveProfile } from '@/db/schema'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -33,23 +33,43 @@ export function Settings() {
   const avatarInputRef = React.useRef<HTMLInputElement>(null)
   const cameraInputRef = React.useRef<HTMLInputElement>(null)
 
-  // Load user profile from localStorage
+  // Load user profile from DB (with localStorage fallback)
   useEffect(() => {
-    const savedProfile = localStorage.getItem('finance-os-profile')
-    const savedCurrency = localStorage.getItem('finance-os-currency') || 'INR'
-    const savedTheme = localStorage.getItem('finance-os-theme') || 'dark'
-    const savedNotifications = localStorage.getItem('finance-os-notifications') !== 'false'
-
-    if (savedProfile) {
-      setProfile(JSON.parse(savedProfile))
+    async function loadProfile() {
+      try {
+        const dbProfile = await getProfile()
+        if (dbProfile) {
+          setProfile({ name: dbProfile.name, email: dbProfile.email, avatar: dbProfile.avatar })
+          setCurrency(dbProfile.currency || 'INR')
+        } else {
+          // Fallback to localStorage for first-time migration
+          const savedProfile = localStorage.getItem('finance-os-profile')
+          if (savedProfile) {
+            const p = JSON.parse(savedProfile)
+            setProfile(p)
+            // Migrate to DB
+            await saveProfile({ name: p.name, email: p.email, avatar: p.avatar, currency: localStorage.getItem('finance-os-currency') || 'INR' })
+          }
+          setCurrency(localStorage.getItem('finance-os-currency') || 'INR')
+        }
+      } catch {
+        // Final fallback
+        const savedProfile = localStorage.getItem('finance-os-profile')
+        if (savedProfile) setProfile(JSON.parse(savedProfile))
+        setCurrency(localStorage.getItem('finance-os-currency') || 'INR')
+      }
     }
-    setCurrency(savedCurrency)
+    loadProfile()
+
+    const savedTheme = localStorage.getItem('finance-os-theme') || 'light'
+    const savedNotifications = localStorage.getItem('finance-os-notifications') !== 'false'
     setTheme(savedTheme)
     setNotifications(savedNotifications)
   }, [])
 
-  // Save profile
-  const handleSaveProfile = () => {
+  // Save profile to DB + localStorage
+  const handleSaveProfile = async () => {
+    await saveProfile({ name: profile.name, email: profile.email, avatar: profile.avatar, currency })
     localStorage.setItem('finance-os-profile', JSON.stringify(profile))
     setSaveSuccess(true)
     setTimeout(() => setSaveSuccess(false), 2000)
@@ -57,15 +77,17 @@ export function Settings() {
   }
 
   // Handle avatar file selection (upload or capture)
-  const handleAvatarFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
     const reader = new FileReader()
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const dataUrl = e.target?.result as string
       const updated = { ...profile, avatar: dataUrl }
       setProfile(updated)
+      // Save to both DB and localStorage
+      await saveProfile({ name: updated.name, email: updated.email, avatar: dataUrl, currency })
       localStorage.setItem('finance-os-profile', JSON.stringify(updated))
       setShowAvatarOptions(false)
     }
@@ -73,24 +95,28 @@ export function Settings() {
     event.target.value = '' // reset so same file can be re-selected
   }
 
-  const handleRemoveAvatar = () => {
+  const handleRemoveAvatar = async () => {
     const updated = { ...profile, avatar: undefined }
     setProfile(updated)
+    await saveProfile({ name: updated.name, email: updated.email, avatar: undefined, currency })
     localStorage.setItem('finance-os-profile', JSON.stringify(updated))
     setShowAvatarOptions(false)
   }
 
   // Save currency
-  const handleCurrencyChange = (newCurrency: string) => {
+  const handleCurrencyChange = async (newCurrency: string) => {
     setCurrency(newCurrency)
     localStorage.setItem('finance-os-currency', newCurrency)
+    await saveProfile({ currency: newCurrency })
   }
 
   // Save theme
   const handleThemeChange = (newTheme: string) => {
     setTheme(newTheme)
     localStorage.setItem('finance-os-theme', newTheme)
-    document.documentElement.setAttribute('data-theme', newTheme)
+    // Apply theme via class on html element
+    document.documentElement.classList.remove('light', 'dark')
+    document.documentElement.classList.add(newTheme)
   }
 
   // Toggle notifications
@@ -314,12 +340,12 @@ export function Settings() {
         className="grid grid-cols-3 gap-3"
       >
         {[
-          { label: 'Data Stored', value: '100%' },
-          { label: 'Privacy', value: 'Local' },
-          { label: 'Status', value: 'Ready' }
+          { label: 'Your Data', value: 'Secure' },
+          { label: 'Privacy', value: 'Private' },
+          { label: 'App', value: 'Active' }
         ].map((stat, i) => (
           <div key={i} className="bg-secondary/50 border border-border rounded-xl p-3 text-center">
-            <p className="text-xs text-muted-foreground uppercase">{stat.label}</p>
+            <p className="text-xs text-muted-foreground">{stat.label}</p>
             <p className="text-sm font-bold text-foreground mt-1">{stat.value}</p>
           </div>
         ))}
@@ -345,52 +371,52 @@ export function Settings() {
         <h3 className="text-sm font-bold text-foreground uppercase opacity-60">Preferences</h3>
 
         {/* Currency */}
-        <div className="bg-secondary/30 border border-border rounded-xl p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="bg-secondary/30 border border-border rounded-xl p-4">
+          <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
               <Globe className="w-5 h-5 text-amber-500" />
             </div>
             <div>
               <p className="text-sm font-semibold text-foreground">Currency</p>
-              <p className="text-xs text-muted-foreground">{currency}</p>
+              <p className="text-xs text-muted-foreground">Display currency for amounts</p>
             </div>
           </div>
-          <Select value={currency} onChange={(e) => handleCurrencyChange(e.target.value)} className="w-28">
-            <option value="INR">INR (₹)</option>
-            <option value="USD">USD ($)</option>
-            <option value="EUR">EUR (€)</option>
-            <option value="GBP">GBP (£)</option>
-            <option value="JPY">JPY (¥)</option>
-            <option value="AED">AED (د.إ)</option>
-            <option value="CAD">CAD (CA$)</option>
-            <option value="AUD">AUD (A$)</option>
-            <option value="SGD">SGD (S$)</option>
-            <option value="CHF">CHF</option>
-            <option value="CNY">CNY (¥)</option>
-            <option value="KRW">KRW (₩)</option>
-            <option value="BRL">BRL (R$)</option>
-            <option value="ZAR">ZAR (R)</option>
-            <option value="MXN">MXN (MX$)</option>
-            <option value="THB">THB (฿)</option>
+          <Select value={currency} onChange={(e) => handleCurrencyChange(e.target.value)} className="w-full">
+            <option value="INR">INR (₹) — Indian Rupee</option>
+            <option value="USD">USD ($) — US Dollar</option>
+            <option value="EUR">EUR (€) — Euro</option>
+            <option value="GBP">GBP (£) — British Pound</option>
+            <option value="JPY">JPY (¥) — Japanese Yen</option>
+            <option value="AED">AED (د.إ) — Dirham</option>
+            <option value="CAD">CAD (CA$) — Canadian Dollar</option>
+            <option value="AUD">AUD (A$) — Australian Dollar</option>
+            <option value="SGD">SGD (S$) — Singapore Dollar</option>
+            <option value="CHF">CHF — Swiss Franc</option>
+            <option value="CNY">CNY (¥) — Chinese Yuan</option>
+            <option value="KRW">KRW (₩) — Korean Won</option>
+            <option value="BRL">BRL (R$) — Brazilian Real</option>
+            <option value="ZAR">ZAR (R) — South African Rand</option>
+            <option value="MXN">MXN (MX$) — Mexican Peso</option>
+            <option value="THB">THB (฿) — Thai Baht</option>
           </Select>
         </div>
 
         {/* Theme */}
-        <div className="bg-secondary/30 border border-border rounded-xl p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="bg-secondary/30 border border-border rounded-xl p-4">
+          <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center">
               <Palette className="w-5 h-5 text-indigo-500" />
             </div>
             <div>
               <p className="text-sm font-semibold text-foreground">Theme</p>
-              <p className="text-xs text-muted-foreground capitalize">{theme}</p>
+              <p className="text-xs text-muted-foreground">App appearance</p>
             </div>
           </div>
-          <Select value={theme} onChange={(e) => handleThemeChange(e.target.value)} className="w-32">
+          <Select value={theme} onChange={(e) => handleThemeChange(e.target.value)} className="w-full">
             <option value="light">Light</option>
             <option value="dark">Dark</option>
-            <option value="system">System</option>
-            <option value="auto">Auto (Time)</option>
+            <option value="system">System (follows device)</option>
+            <option value="auto">Auto (dark at night)</option>
           </Select>
         </div>
 
@@ -529,28 +555,31 @@ export function Settings() {
         </motion.div>
       )}
 
-      {/* About Section */}
+      {/* About */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
         className="space-y-3 pb-20"
       >
-        <h3 className="text-sm font-bold text-foreground uppercase opacity-60">About</h3>
+        <h3 className="text-sm font-bold text-foreground uppercase opacity-60">About PennyFlow</h3>
         <div className="bg-secondary/30 border border-border rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between text-sm">
-            <p className="text-muted-foreground">Version</p>
+            <p className="text-muted-foreground">App Version</p>
             <p className="font-semibold text-foreground">1.0.0</p>
           </div>
           <div className="flex items-center justify-between text-sm">
-            <p className="text-muted-foreground">Storage</p>
-            <p className="font-semibold text-foreground">Local (IndexedDB)</p>
+            <p className="text-muted-foreground">Data Location</p>
+            <p className="font-semibold text-foreground">On this device only</p>
           </div>
           <div className="flex items-center justify-between text-sm">
-            <p className="text-muted-foreground">Data Privacy</p>
-            <p className="font-semibold text-emerald-500">100% Local</p>
+            <p className="text-muted-foreground">Your Privacy</p>
+            <p className="font-semibold text-emerald-500">Fully private — no cloud</p>
           </div>
         </div>
+        <p className="text-[11px] text-muted-foreground px-1 leading-relaxed">
+          PennyFlow keeps all your financial data on your device. Nothing is sent to any server. Your money, your data, your control.
+        </p>
       </motion.div>
     </div>
   )

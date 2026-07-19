@@ -242,35 +242,30 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
   }
 
   return (
-    <div className="flex flex-col pb-28 -mx-5 -mt-4">
+    <div className="flex flex-col pb-24 -mx-5 -mt-4">
       {/* Month Navigation Header */}
-      <div className="flex items-center justify-between px-5 py-3">
-        <div className="flex items-center gap-2">
-          <button onClick={goToPrevMonth} className="text-zinc-400 hover:text-white p-1 transition-colors">
+      <div className="flex items-center justify-between px-5 py-4">
+        <div className="flex items-center gap-3">
+          <button onClick={goToPrevMonth} className="text-muted-foreground hover:text-foreground p-1 transition-colors">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-sm font-bold text-foreground tracking-tight min-w-[90px] text-center">
+          <span className="text-[15px] font-semibold text-foreground tracking-tight min-w-[100px] text-center">
             {getMonthName(currentMonth.month, currentMonth.year)}
           </span>
-          <button onClick={goToNextMonth} className="text-zinc-400 hover:text-white p-1 transition-colors">
+          <button onClick={goToNextMonth} className="text-muted-foreground hover:text-foreground p-1 transition-colors">
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="text-zinc-400 hover:text-foreground transition-colors">
-            <Sparkles className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setSearchOpen(!searchOpen)}
-            className="text-zinc-400 hover:text-foreground transition-colors"
-          >
-            <Search className="w-4 h-4" />
-          </button>
-        </div>
+        <button
+          onClick={() => setSearchOpen(!searchOpen)}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+        >
+          <Search className="w-4 h-4" />
+        </button>
       </div>
 
       {/* View Tabs */}
-      <div className="flex border-b border-border/40 px-2">
+      <div className="flex border-b border-border/50 px-4">
         {(['daily', 'calendar', 'monthly', 'total', 'note'] as const).map((tab) => (
           <button
             key={tab}
@@ -278,29 +273,29 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
             className={cn(
               "flex-1 py-2.5 text-[11px] font-medium text-center capitalize transition-all",
               viewTab === tab
-                ? "text-red-400 border-b-2 border-red-400"
+                ? "text-primary border-b-2 border-primary"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            {tab}
+            {tab === 'daily' ? 'Daily' : tab}
           </button>
         ))}
       </div>
 
       {/* Monthly Summary Bar */}
-      <div className="grid grid-cols-3 px-5 py-3 border-b border-border/30">
+      <div className="grid grid-cols-3 px-5 py-3.5 border-b border-border/40">
         <div className="text-center">
           <p className="text-[10px] text-muted-foreground mb-0.5">Income</p>
-          <p className="text-xs font-bold text-blue-400">{formatCurrency(monthIncome)}</p>
+          <p className="text-[13px] font-semibold text-emerald-500">{formatCurrency(monthIncome)}</p>
         </div>
         <div className="text-center">
           <p className="text-[10px] text-muted-foreground mb-0.5">Expenses</p>
-          <p className="text-xs font-bold text-red-400">{formatCurrency(monthExpense)}</p>
+          <p className="text-[13px] font-semibold text-foreground">{formatCurrency(monthExpense)}</p>
         </div>
         <div className="text-center">
-          <p className="text-[10px] text-muted-foreground mb-0.5">Total</p>
-          <p className={cn("text-xs font-bold", monthTotal >= 0 ? "text-blue-400" : "text-red-400")}>
-            {monthTotal < 0 ? '-' : ''}{formatCurrency(Math.abs(monthTotal))}
+          <p className="text-[10px] text-muted-foreground mb-0.5">Net</p>
+          <p className={cn("text-[13px] font-semibold", monthTotal >= 0 ? "text-emerald-500" : "text-destructive")}>
+            {monthTotal < 0 ? '-' : '+'}{formatCurrency(Math.abs(monthTotal))}
           </p>
         </div>
       </div>
@@ -349,24 +344,25 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
               return (
                 <div key={date}>
                   {/* Day Header Row */}
-                  <div className="flex items-center justify-between px-4 py-2.5 bg-secondary/40 border-b border-border/30">
+                  <div className="flex items-center justify-between px-5 py-2.5 border-b border-border/40">
                     <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold text-foreground">{day}</span>
-                      <span className={cn(
-                        "text-[9px] font-bold text-white px-1.5 py-0.5 rounded",
-                        getWeekdayColor(date)
-                      )}>
+                      <span className="text-[15px] font-semibold text-foreground">{day}</span>
+                      <span className="text-[11px] text-muted-foreground">
                         {weekday}
                       </span>
-                      <span className="text-[11px] text-muted-foreground">{monthYear}</span>
+                      <span className="text-[11px] text-muted-foreground/60">{monthYear}</span>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <span className="text-[11px] font-semibold text-red-400">
-                        {formatCurrency(dayExpense)}
-                      </span>
-                      <span className="text-[11px] font-semibold text-blue-400">
-                        {formatCurrency(dayIncome)}
-                      </span>
+                    <div className="flex items-center gap-3">
+                      {dayExpense > 0 && (
+                        <span className="text-[11px] font-medium text-foreground">
+                          -{formatCurrency(dayExpense)}
+                        </span>
+                      )}
+                      {dayIncome > 0 && (
+                        <span className="text-[11px] font-medium text-emerald-500">
+                          +{formatCurrency(dayIncome)}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -411,28 +407,27 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
                                 accountId: tx.accountId,
                               })
                             }}
-                            className="flex items-center gap-3 px-4 py-3 border-b border-border/20 group hover:bg-secondary/30 transition-colors"
+                            className="flex items-center gap-3 px-5 py-3.5 border-b border-border/40 group hover:bg-secondary/30 transition-colors"
                           >
-                            <div className="flex items-center gap-2.5 min-w-0 flex-shrink-0">
-                              <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center text-base flex-shrink-0", catConfig.bg)}>
-                                {catConfig.emoji}
-                              </div>
-                              <span className={cn("text-[10px] font-medium truncate max-w-[60px]", catConfig.color)}>
-                                {tx.category}
-                              </span>
+                            {/* Category icon */}
+                            <div className={cn("w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0", catConfig.bg)}>
+                              {catConfig.emoji}
                             </div>
+
+                            {/* Description & meta */}
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <p className="text-sm font-medium text-foreground truncate">{tx.description || tx.category}</p>
-                                {tx.receiptImage && <Camera className="w-3 h-3 text-amber-500 flex-shrink-0" />}
-                                {tx.isAutoGenerated && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-primary/10 text-primary flex-shrink-0">AUTO</span>}
-                              </div>
-                              <p className="text-[10px] text-muted-foreground">{account?.name || 'Accounts'}</p>
+                              <p className="text-[14px] font-semibold text-foreground truncate">{tx.description || tx.category}</p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5 truncate capitalize">
+                                {catConfig.label} · {new Date(tx.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+                              </p>
                             </div>
+
+                            {/* Amount + account */}
                             <div className="flex-shrink-0 text-right">
-                              <span className={cn("text-sm font-bold", tx.type === 'income' ? 'text-blue-400' : 'text-red-400')}>
-                                {formatCurrency(tx.amount)}
+                              <span className={cn("text-[14px] font-bold", tx.type === 'income' ? 'text-positive' : 'text-negative')}>
+                                {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
                               </span>
+                              {account && <p className="text-[11px] text-muted-foreground mt-0.5">{account.name}</p>}
                             </div>
                           </div>
 
@@ -481,10 +476,9 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
               )
             })
           ) : (
-            <div className="text-center py-16 px-5">
-              <Calendar className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-              <p className="text-sm font-medium text-muted-foreground">No transactions this month</p>
-              <p className="text-[11px] text-muted-foreground/60 mt-1">Add your first expense or income to see it here.</p>
+            <div className="text-center py-20 px-5">
+              <p className="text-[15px] font-medium text-muted-foreground">No transactions</p>
+              <p className="text-[13px] text-muted-foreground/60 mt-1">Nothing recorded this month yet</p>
             </div>
           )}
         </div>

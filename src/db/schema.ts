@@ -231,6 +231,17 @@ export interface DebtRecord {
   createdAt: string;
 }
 
+// User Profile (stored in DB instead of localStorage for persistence)
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string; // base64 data URL
+  currency: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 class PennyFlowDatabase extends Dexie {
   transactions!: Table<Transaction, string>;
   lending!: Table<Lending, string>;
@@ -250,9 +261,12 @@ class PennyFlowDatabase extends Dexie {
   subscriptions!: Table<Subscription, string>;
   sharedWallets!: Table<SharedWallet, string>;
   debts!: Table<DebtRecord, string>;
+  userProfile!: Table<UserProfile, string>;
 
   constructor() {
     super('PennyFlowDatabase');
+
+    // Version 6 — preserve existing data (DO NOT remove or modify)
     this.version(6).stores({
       transactions: 'id, date, type, category, accountId',
       lending: 'id, contactName, type, status, createdAt',
@@ -273,6 +287,48 @@ class PennyFlowDatabase extends Dexie {
       sharedWallets: 'id, name, inviteCode',
       debts: 'id, name, createdAt',
     });
+
+    // Version 7 — add userProfile table (non-destructive upgrade)
+    this.version(7).stores({
+      transactions: 'id, date, type, category, accountId',
+      lending: 'id, contactName, type, status, createdAt',
+      assets: 'id, name, type',
+      bills: 'id, title, dueDate, isPaid',
+      goals: 'id, title, targetDate',
+      accounts: 'id, name, type',
+      systemLogs: 'id, timestamp, type',
+      budgets: 'id, category, period',
+      customCategories: 'id, name, type',
+      tags: 'id, name',
+      investments: 'id, name, symbol, accountId',
+      notifications: 'id, type, timestamp',
+      financialBriefs: 'id, period, startDate',
+      templates: 'id, name, category, type',
+      splits: 'id, transactionId, createdAt',
+      subscriptions: 'id, name, cycle, isActive',
+      sharedWallets: 'id, name, inviteCode',
+      debts: 'id, name, createdAt',
+      userProfile: 'id',
+    }).upgrade(async (tx) => {
+      // Migrate profile from localStorage to DB if it exists
+      if (typeof window !== 'undefined') {
+        const savedProfile = localStorage.getItem('finance-os-profile')
+        if (savedProfile) {
+          try {
+            const profile = JSON.parse(savedProfile)
+            await tx.table('userProfile').add({
+              id: 'default',
+              name: profile.name || '',
+              email: profile.email || '',
+              avatar: profile.avatar || undefined,
+              currency: localStorage.getItem('finance-os-currency') || 'INR',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            })
+          } catch {}
+        }
+      }
+    });
   }
 }
 
@@ -289,7 +345,28 @@ export function generateUUID(): string {
 // Helper to initialize database (no seed data - fresh start for real user data)
 export async function seedDatabaseIfEmpty() {
   const accountCount = await db.accounts.count();
-  if (accountCount > 0) return; // Already initialized
+  if (accountCount > 0) {
+    // Still check if profile needs migration
+    const profileCount = await db.userProfile.count()
+    if (profileCount === 0) {
+      const savedProfile = localStorage.getItem('finance-os-profile')
+      if (savedProfile) {
+        try {
+          const p = JSON.parse(savedProfile)
+          await db.userProfile.add({
+            id: 'default',
+            name: p.name || '',
+            email: p.email || '',
+            avatar: p.avatar,
+            currency: localStorage.getItem('finance-os-currency') || 'INR',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          })
+        } catch {}
+      }
+    }
+    return;
+  }
 
   // Just log a welcome entry so the timeline isn't completely empty
   await db.systemLogs.add({
@@ -298,6 +375,38 @@ export async function seedDatabaseIfEmpty() {
     type: 'system',
     description: 'Welcome to PennyFlow. Your local database is ready.',
   });
+}
+
+// === Profile helpers (stored in DB for persistence) ===
+
+export async function getProfile(): Promise<UserProfile | undefined> {
+  return db.userProfile.get('default')
+}
+
+export async function saveProfile(data: Partial<UserProfile>): Promise<void> {
+  const existing = await db.userProfile.get('default')
+  if (existing) {
+    await db.userProfile.update('default', { ...data, updatedAt: new Date().toISOString() })
+  } else {
+    await db.userProfile.add({
+      id: 'default',
+      name: data.name || '',
+      email: data.email || '',
+      avatar: data.avatar,
+      currency: data.currency || 'INR',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+  }
+  // Also keep localStorage as backup for quick access
+  localStorage.setItem('finance-os-profile', JSON.stringify({
+    name: data.name || existing?.name || '',
+    email: data.email || existing?.email || '',
+    avatar: data.avatar || existing?.avatar,
+  }))
+  if (data.currency) {
+    localStorage.setItem('finance-os-currency', data.currency)
+  }
 }
 
 // Synchronize Account Balance changes to Assets table
