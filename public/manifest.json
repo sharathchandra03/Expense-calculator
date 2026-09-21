@@ -1,0 +1,66 @@
+{
+  "name": "PennyFlow",
+  "short_name": "PennyFlow",
+  "description": "Premium Local-First Personal Finance Tracker",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#6d5efc",
+  "icons": [
+    {
+      "src": "/Favicon assets/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/Favicon assets/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/Favicon assets/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/Favicon assets/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Add Transaction",
+      "short_name": "Add",
+      "description": "Quickly add income or expense",
+      "url": "/?action=add-expense",
+      "icons": [{ "src": "/Favicon assets/android-chrome-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Ledger",
+      "short_name": "Ledger",
+      "description": "View transaction history",
+      "url": "/?action=ledger",
+      "icons": [{ "src": "/Favicon assets/android-chrome-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Dashboard",
+      "short_name": "Home",
+      "description": "View your finances",
+      "url": "/?action=dashboard",
+      "icons": [{ "src": "/Favicon assets/android-chrome-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Analytics",
+      "short_name": "Analytics",
+      "description": "Monthly financial analytics",
+      "url": "/?action=analytics",
+      "icons": [{ "src": "/Favicon assets/android-chrome-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}
