@@ -1,7 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { supabase, isSupabaseConfigured, checkSupabaseReachable } from '@/lib/supabase'
 import { db } from '@/db/schema'
 import { User, Session } from '@supabase/supabase-js'
 
@@ -10,8 +10,11 @@ interface AuthContextType {
   session: Session | null
   loading: boolean
   isConfigured: boolean
+  /** null = not yet checked, true/false = reachability of the Supabase project. */
+  reachable: boolean | null
   signInWithGoogle: () => Promise<{ error?: string }>
   signOut: () => Promise<void>
+  checkReachability: () => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -19,8 +22,10 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   loading: true,
   isConfigured: false,
+  reachable: null,
   signInWithGoogle: async () => ({}),
   signOut: async () => {},
+  checkReachability: async () => false,
 })
 
 /**
@@ -115,13 +120,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [reachable, setReachable] = useState<boolean | null>(null)
+
+  const checkReachability = async (): Promise<boolean> => {
+    const ok = await checkSupabaseReachable()
+    setReachable(ok)
+    return ok
+  }
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
       // No credentials — run fully local, don't attempt any auth calls.
       setLoading(false)
+      setReachable(false)
       return
     }
+
+    // In the background, confirm the configured project is actually online.
+    // If it's not (deleted/paused project, typo'd URL, or offline), the UI
+    // can warn the user instead of bouncing them to a dead login page.
+    checkSupabaseReachable().then(setReachable)
 
     // Get initial session. With detectSessionInUrl + PKCE, the client
     // exchanges the OAuth `?code=` here before resolving the session.
@@ -130,6 +148,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(session?.user ?? null)
       setLoading(false)
       if (session) cleanOAuthParamsFromUrl()
+    }).catch(() => {
+      // A failed getSession (e.g. dead project) shouldn't hang the app.
+      setLoading(false)
     })
 
     // Listen for auth changes
@@ -147,6 +168,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!isSupabaseConfigured) {
       return { error: 'Cloud sync is not configured. Missing Supabase credentials.' }
     }
+
+    // Verify the project is reachable BEFORE redirecting, so we don't send the
+    // user to a dead domain (the DNS_PROBE_FINISHED_NXDOMAIN screen).
+    const ok = await checkSupabaseReachable()
+    setReachable(ok)
+    if (!ok) {
+      return {
+        error:
+          'Can\'t reach the cloud server. The Supabase project may be paused, deleted, or the URL is misconfigured. Your data is still saved locally.',
+      }
+    }
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -189,7 +222,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, isConfigured: isSupabaseConfigured, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, isConfigured: isSupabaseConfigured, reachable, signInWithGoogle, signOut, checkReachability }}>
       {children}
     </AuthContext.Provider>
   )

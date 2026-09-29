@@ -370,7 +370,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
         <div className="hero-gradient px-6 pt-10 pb-8 rounded-[1.75rem] text-white">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-1.5">
-              <span className="text-[13px] font-medium text-white/70">Net balance</span>
+              <span className="text-[13px] font-medium text-white/70">Balance after expenses</span>
               <Sparkles className="w-3.5 h-3.5 text-white/50" />
             </div>
             <button
@@ -382,9 +382,9 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
             </button>
           </div>
 
-          {/* Net balance (top KPI) */}
+          {/* Balance after expenses (income this month − expenses this month) */}
           {(() => {
-            const full = formatCurrency(netWorth)
+            const full = formatCurrency(monthNet)
             const dot = full.lastIndexOf('.')
             const main = dot > -1 ? full.slice(0, dot) : full
             const dec = dot > -1 ? full.slice(dot) : ''
@@ -400,7 +400,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
             {monthNet >= 0 ? '+' : ''}{monthTrendPct}% · {monthNet >= 0 ? 'You crushed it this month. Keep going!' : 'Spending outpaced income this month.'}
           </p>
 
-          {/* Total income received this month — secondary stat */}
+          {/* Total monthly income received — wallet chip */}
           <div className="mt-4 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/12">
             <Wallet className="w-3.5 h-3.5 text-white/60" />
             <span className="text-[11px] font-medium text-white/60">Income this month</span>
@@ -436,6 +436,23 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
             See details
           </button>
         </div>
+
+        {/* Net worth — total net value across accounts, investments & lending */}
+        <button
+          onClick={() => onNavigateToTab('accounts')}
+          className="w-full flex items-center justify-between mb-4 p-3 rounded-2xl bg-secondary/60 hover:bg-secondary transition-colors text-left"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Wallet className="w-4 h-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-[11px] text-muted-foreground leading-tight">Net worth</p>
+              <p className="text-[10px] text-muted-foreground/60 leading-tight">Accounts, investments &amp; lending</p>
+            </div>
+          </div>
+          <span className="text-[15px] font-bold text-foreground">{formatCurrency(netWorth)}</span>
+        </button>
 
         {/* Summary pills */}
         <div className="flex items-center gap-2 mb-5">

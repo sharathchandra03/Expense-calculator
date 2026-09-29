@@ -244,6 +244,63 @@ export class SyncService {
   }
 
   /**
+   * Force-restore from cloud, REPLACING local data.
+   *
+   * Unlike pullFromCloud (which only restores when local is empty), this is the
+   * explicit "get my old data back" action the user triggers from Settings.
+   * It clears each synced table and repopulates it from the cloud copy, so a
+   * user who reinstalled — or is on a device with stale/partial data — can pull
+   * their real account back on demand. Guarded by a confirmation in the UI.
+   *
+   * Returns isEmpty:true (and changes nothing) if the account has no cloud data.
+   */
+  static async forceRestoreFromCloud(userId: string): Promise<{ success: boolean; error?: string; isEmpty?: boolean }> {
+    if (!isSupabaseConfigured) return { success: false, error: 'Cloud sync not configured' }
+    try {
+      const { data: rows, error } = await supabase
+        .from('user_data')
+        .select('table_name, data, updated_at')
+        .eq('user_id', userId)
+
+      if (error) return { success: false, error: error.message }
+      if (!rows || rows.length === 0) return { success: true, isEmpty: true }
+
+      for (const row of rows) {
+        if (row.table_name === '_preferences') {
+          const prefs = row.data as any
+          if (prefs.currency) localStorage.setItem('finance-os-currency', prefs.currency)
+          if (prefs.theme) localStorage.setItem('finance-os-theme', prefs.theme)
+          if (prefs.notifications) localStorage.setItem('finance-os-notifications', prefs.notifications)
+          if (prefs.profile) localStorage.setItem('finance-os-profile', prefs.profile)
+          if (prefs.hiddenCategories) localStorage.setItem('pennyflow-hidden-categories', prefs.hiddenCategories)
+          if (prefs.customAccountTypes) localStorage.setItem('pennyflow-custom-account-types', prefs.customAccountTypes)
+          if (prefs.hiddenAccountTypes) localStorage.setItem('pennyflow-hidden-account-types', prefs.hiddenAccountTypes)
+          if (prefs.dashOrder) localStorage.setItem('pennyflow-dash-order', prefs.dashOrder)
+          if (prefs.overviewOrder) localStorage.setItem('pennyflow-overview-order', prefs.overviewOrder)
+          if (prefs.onboardingDone) localStorage.setItem('finance-os-onboarding-done', prefs.onboardingDone)
+          continue
+        }
+
+        const table = (db as any)[row.table_name]
+        if (!table) continue
+
+        const cloudData = row.data as any[]
+        if (!Array.isArray(cloudData)) continue
+
+        // Replace local table contents with the cloud copy.
+        await table.clear()
+        if (cloudData.length > 0) await table.bulkAdd(cloudData)
+      }
+
+      localStorage.setItem('pennyflow-last-sync', new Date().toISOString())
+      SyncService.markAccountLinked(userId)
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Unknown error' }
+    }
+  }
+
+  /**
    * Get last sync timestamp
    */
   static getLastSync(): string | null {

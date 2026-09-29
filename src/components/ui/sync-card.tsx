@@ -3,29 +3,44 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
 import { SyncService } from '@/services/SyncService'
-import { Cloud, LogOut, Check } from 'lucide-react'
+import { Cloud, CloudOff, LogOut, Check, AlertTriangle, RefreshCw, Download, UploadCloud } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 export function SyncCard({ compact = false }: { compact?: boolean }) {
-  const { user, loading, isConfigured, signInWithGoogle, signOut } = useAuth()
+  const { user, loading, isConfigured, reachable, signInWithGoogle, signOut, checkReachability } = useAuth()
   const [visible, setVisible] = useState(true)
   const [lastSync, setLastSync] = useState<string | null>(null)
   const [signInError, setSignInError] = useState<string | null>(null)
   const [signingIn, setSigningIn] = useState(false)
+  const [rechecking, setRechecking] = useState(false)
+  const [busy, setBusy] = useState<null | 'backup' | 'restore'>(null)
+  const [actionMsg, setActionMsg] = useState<string | null>(null)
+  const [confirmRestore, setConfirmRestore] = useState(false)
 
-  const handleSignIn = async () => {
-    setSignInError(null)
-    setSigningIn(true)
-    try {
-      const { error } = await signInWithGoogle()
-      if (error) {
-        setSignInError(error)
-        setSigningIn(false)
-      }
-      // On success the page redirects to Google, so we leave signingIn true.
-    } catch (err: any) {
-      setSignInError(err?.message || 'Sign-in failed. Please try again.')
-      setSigningIn(false)
+  const handleBackupNow = async () => {
+    if (!user) return
+    setBusy('backup')
+    setActionMsg(null)
+    const res = await SyncService.pushToCloud(user.id)
+    setBusy(null)
+    setLastSync(SyncService.getLastSync())
+    setActionMsg(res.success ? 'Backed up to cloud.' : `Backup failed: ${res.error || 'unknown error'}`)
+  }
+
+  const handleRestore = async () => {
+    if (!user) return
+    setConfirmRestore(false)
+    setBusy('restore')
+    setActionMsg(null)
+    const res = await SyncService.forceRestoreFromCloud(user.id)
+    setBusy(null)
+    if (res.success && res.isEmpty) {
+      setActionMsg('No cloud backup found for this account yet.')
+    } else if (res.success) {
+      setActionMsg('Restored from cloud. Reloading…')
+      setTimeout(() => window.location.reload(), 900)
+    } else {
+      setActionMsg(`Restore failed: ${res.error || 'unknown error'}`)
     }
   }
 
@@ -43,35 +58,79 @@ export function SyncCard({ compact = false }: { compact?: boolean }) {
     return () => clearTimeout(timer)
   }, [compact, loading])
 
+  const handleSignIn = async () => {
+    setSignInError(null)
+    setSigningIn(true)
+    try {
+      const { error } = await signInWithGoogle()
+      if (error) {
+        setSignInError(error)
+        setSigningIn(false)
+      }
+      // On success the page redirects to Google, so we leave signingIn true.
+    } catch (err: any) {
+      setSignInError(err?.message || 'Sign-in failed. Please try again.')
+      setSigningIn(false)
+    }
+  }
+
+  const handleRecheck = async () => {
+    setRechecking(true)
+    await checkReachability()
+    setRechecking(false)
+  }
+
   const handleSignOut = async () => {
     await signOut()
   }
 
   if (loading) return null
 
-  // Dashboard: if logged in, don't show
+  // Dashboard compact mode: if logged in, don't clutter the dashboard.
   if (compact && user) return null
 
-  // Logged in (Settings only)
-  if (user) {
-    const formattedSync = lastSync
-      ? new Date(lastSync).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-      : null
+  const formattedSync = lastSync
+    ? new Date(lastSync).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : null
 
+  // ---- Logged in ----
+  if (user) {
+    // Cloud project unreachable while signed in → data isn't currently backing up.
+    const cloudDown = reachable === false
     return (
-      <div className="rounded-2xl bg-emerald-500/5 border border-emerald-500/20 p-4 space-y-3">
+      <div
+        className={
+          cloudDown
+            ? 'rounded-2xl bg-amber-500/5 border border-amber-500/30 p-4 space-y-3'
+            : 'rounded-2xl bg-emerald-500/5 border border-emerald-500/20 p-4 space-y-3'
+        }
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             {user.user_metadata?.avatar_url ? (
               <img src={user.user_metadata.avatar_url} alt="" className="w-9 h-9 rounded-full" />
             ) : (
-              <div className="w-9 h-9 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                <Check className="w-4 h-4 text-emerald-500" />
+              <div
+                className={
+                  cloudDown
+                    ? 'w-9 h-9 rounded-full bg-amber-500/20 flex items-center justify-center'
+                    : 'w-9 h-9 rounded-full bg-emerald-500/20 flex items-center justify-center'
+                }
+              >
+                {cloudDown ? (
+                  <CloudOff className="w-4 h-4 text-amber-500" />
+                ) : (
+                  <Check className="w-4 h-4 text-emerald-500" />
+                )}
               </div>
             )}
             <div>
               <p className="text-xs font-semibold text-foreground">{user.user_metadata?.full_name || user.email}</p>
-              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Auto-synced across devices</p>
+              {cloudDown ? (
+                <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">Cloud unreachable — not syncing</p>
+              ) : (
+                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Linked to cloud • Auto-synced</p>
+              )}
             </div>
           </div>
           <button
@@ -82,14 +141,90 @@ export function SyncCard({ compact = false }: { compact?: boolean }) {
             <LogOut className="w-4 h-4" />
           </button>
         </div>
-        {formattedSync && (
-          <p className="text-[10px] text-muted-foreground">Last synced: {formattedSync}</p>
+
+        {/* Status detail row */}
+        <div className="flex items-center justify-between text-[10px] pt-1 border-t border-border/40">
+          <span className="text-muted-foreground">
+            Status:{' '}
+            <span className={cloudDown ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-emerald-600 dark:text-emerald-400 font-semibold'}>
+              {cloudDown ? 'Backup paused' : 'Backed up to cloud'}
+            </span>
+          </span>
+          {formattedSync && <span className="text-muted-foreground">Last sync: {formattedSync}</span>}
+        </div>
+
+        {/* Manual backup / restore controls (available when the cloud is up) */}
+        {!cloudDown && (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <button
+                onClick={handleBackupNow}
+                disabled={busy !== null}
+                className="flex-1 h-8 rounded-lg bg-secondary text-foreground text-[11px] font-semibold flex items-center justify-center gap-1.5 hover:bg-secondary/80 disabled:opacity-50"
+              >
+                {busy === 'backup' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3" />}
+                Back up now
+              </button>
+              <button
+                onClick={() => setConfirmRestore(true)}
+                disabled={busy !== null}
+                className="flex-1 h-8 rounded-lg bg-secondary text-foreground text-[11px] font-semibold flex items-center justify-center gap-1.5 hover:bg-secondary/80 disabled:opacity-50"
+              >
+                {busy === 'restore' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                Restore from cloud
+              </button>
+            </div>
+
+            {confirmRestore && (
+              <div className="rounded-lg bg-secondary/60 border border-border/50 p-2.5 space-y-2">
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Replace the data on this device with your cloud backup? This overwrites current local data with what&apos;s
+                  saved in your account.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleRestore}
+                    className="flex-1 h-7 rounded-md bg-primary text-primary-foreground text-[10px] font-bold hover:opacity-90"
+                  >
+                    Yes, restore
+                  </button>
+                  <button
+                    onClick={() => setConfirmRestore(false)}
+                    className="h-7 px-3 rounded-md bg-secondary text-muted-foreground text-[10px] font-semibold hover:text-foreground"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {actionMsg && <p className="text-[10px] text-muted-foreground">{actionMsg}</p>}
+          </div>
+        )}
+
+        {cloudDown && (
+          <div className="space-y-2">
+            <p className="text-[10px] text-muted-foreground leading-snug">
+              We can&apos;t reach your cloud server right now, so recent changes aren&apos;t backed up. Your data is safe
+              locally on this device and will sync once the server is reachable again.
+            </p>
+            <button
+              onClick={handleRecheck}
+              disabled={rechecking}
+              className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400 hover:opacity-80 disabled:opacity-50"
+            >
+              <RefreshCw className={rechecking ? 'w-3 h-3 animate-spin' : 'w-3 h-3'} />
+              {rechecking ? 'Checking…' : 'Retry connection'}
+            </button>
+          </div>
         )}
       </div>
     )
   }
 
-  // Not logged in - prompt
+  // ---- Not logged in ----
+  const cloudUnreachable = isConfigured && reachable === false
+
   return (
     <AnimatePresence>
       {(!compact || visible) && (
@@ -102,12 +237,34 @@ export function SyncCard({ compact = false }: { compact?: boolean }) {
         >
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Cloud className="w-4 h-4 text-primary" />
+              {cloudUnreachable ? <CloudOff className="w-4 h-4 text-amber-500" /> : <Cloud className="w-4 h-4 text-primary" />}
             </div>
             <div>
               <p className="text-xs font-bold text-foreground">Sync across devices</p>
-              <p className="text-[10px] text-muted-foreground">Sign in to backup and access your data anywhere</p>
+              <p className="text-[10px] text-muted-foreground">
+                {cloudUnreachable ? 'Cloud server unreachable' : 'Sign in to backup and access your data anywhere'}
+              </p>
             </div>
+          </div>
+
+          {/* Status line so users always know whether cloud backup is available */}
+          <div className="flex items-center gap-1.5 text-[10px]">
+            {!isConfigured ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
+                <span className="text-muted-foreground">Cloud sync not set up — data saved locally only</span>
+              </>
+            ) : cloudUnreachable ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                <span className="text-amber-600 dark:text-amber-400 font-medium">Not linked — server unreachable</span>
+              </>
+            ) : (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                <span className="text-muted-foreground">Not linked — sign in to enable backup</span>
+              </>
+            )}
           </div>
 
           <button
@@ -132,6 +289,25 @@ export function SyncCard({ compact = false }: { compact?: boolean }) {
             <p className="text-[10px] text-amber-600 dark:text-amber-400 leading-snug">
               Cloud sync isn&apos;t set up on this build. Your data is still saved locally on this device.
             </p>
+          )}
+          {cloudUnreachable && (
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-2.5 space-y-1.5">
+              <div className="flex items-start gap-1.5">
+                <AlertTriangle className="w-3 h-3 text-amber-500 mt-0.5 flex-shrink-0" />
+                <p className="text-[10px] text-amber-700 dark:text-amber-300 leading-snug">
+                  The cloud server can&apos;t be reached — the Supabase project may be paused, deleted, or misconfigured.
+                  Sign-in won&apos;t work until it&apos;s back, but your data stays safe on this device.
+                </p>
+              </div>
+              <button
+                onClick={handleRecheck}
+                disabled={rechecking}
+                className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400 hover:opacity-80 disabled:opacity-50"
+              >
+                <RefreshCw className={rechecking ? 'w-3 h-3 animate-spin' : 'w-3 h-3'} />
+                {rechecking ? 'Checking…' : 'Retry connection'}
+              </button>
+            </div>
           )}
           {signInError && (
             <p className="text-[10px] text-destructive leading-snug">{signInError}</p>
