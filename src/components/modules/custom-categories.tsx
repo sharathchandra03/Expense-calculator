@@ -4,11 +4,12 @@ import React, { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, CustomCategory, generateUUID } from '@/db/schema'
 import { Input } from '@/components/ui/input'
-import { Plus, Trash2, Edit2, X, ArrowDownRight, ArrowUpRight, Ban } from 'lucide-react'
+import { Plus, Edit2, X, ArrowDownRight, ArrowUpRight, Ban, GripVertical } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/toast-notification'
+import { sortCategories, setCategoryOrder, CategoryType } from '@/lib/category-order'
 
 const COLOR_OPTIONS = [
   '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -17,6 +18,15 @@ const COLOR_OPTIONS = [
 
 const ALL_DEFAULT_EXPENSE = ['Food', 'Transport', 'Shopping', 'Entertainment', 'Utilities', 'Rent', 'Healthcare', 'Education', 'Subscriptions', 'Other']
 const ALL_DEFAULT_INCOME = ['Salary', 'Freelance', 'Investment', 'Bonus', 'Gift', 'Rental Income', 'Interest', 'Other']
+
+// A pill in the management screen — either a built-in default or a DB custom category.
+interface CategoryPill {
+  name: string
+  isCustom: boolean
+  color?: string
+  createdAt?: string
+  cat?: CustomCategory
+}
 
 function getHiddenDefaults(): string[] {
   if (typeof window === 'undefined') return []
@@ -35,6 +45,7 @@ export function CustomCategories() {
   const [isAdding, setIsAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [hiddenDefaults, setHiddenDefaults] = useState<string[]>(getHiddenDefaults)
+  const [orderVersion, setOrderVersion] = useState(0)
   const [confirmState, setConfirmState] = useState<{ open: boolean; id?: string; name?: string; isDefault?: boolean }>({ open: false })
   const { showToast } = useToast()
   const [formData, setFormData] = useState<{
@@ -65,9 +76,41 @@ export function CustomCategories() {
   const expenseCategories = safeCategories.filter((c) => c.type === 'expense')
   const incomeCategories = safeCategories.filter((c) => c.type === 'income')
 
+  // Unified, ordered list per type (defaults + customs), matching the dropdown order.
+  // This is what gets rendered as draggable pills, so reordering here syncs with the
+  // CategorySelect dropdown (both read the same 'pennyflow-category-order' key).
+  const buildOrderedItems = (
+    type: CategoryType,
+    visibleDefaults: string[],
+    customs: CustomCategory[],
+  ): CategoryPill[] => {
+    const items: CategoryPill[] = [
+      ...visibleDefaults.map((name) => ({ name, isCustom: false as const })),
+      ...customs.map((c) => ({ name: c.name, isCustom: true as const, color: c.color, createdAt: c.createdAt, cat: c })),
+    ]
+    return sortCategories(items, type, usageCount)
+  }
+
+  const expenseItems = React.useMemo(
+    () => buildOrderedItems('expense', visibleExpenseDefaults, expenseCategories),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleExpenseDefaults, expenseCategories, usageCount, orderVersion],
+  )
+  const incomeItems = React.useMemo(
+    () => buildOrderedItems('income', visibleIncomeDefaults, incomeCategories),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleIncomeDefaults, incomeCategories, usageCount, orderVersion],
+  )
+
+  const handleReorder = (type: CategoryType, items: CategoryPill[]) => {
+    setCategoryOrder(type, items.map((i) => i.name))
+    setOrderVersion((v) => v + 1)
+  }
+
   const resetForm = () => {
     setFormData({ name: '', type: 'expense', color: '' })
     setEditingId(null)
+    setPromotingDefault(null)
     setIsAdding(false)
   }
 
@@ -98,6 +141,18 @@ export function CustomCategories() {
           color: formData.color || undefined,
           createdAt: new Date().toISOString(),
         })
+        // If we were editing a built-in default, hide the original so it isn't
+        // duplicated, and swap its name in the manual order to keep its position.
+        if (promotingDefault) {
+          // Hide the original default so the promoted custom category replaces it
+          // (whether the name changed or only the color did).
+          if (!hiddenDefaults.includes(promotingDefault)) {
+            const updated = [...hiddenDefaults, promotingDefault]
+            setHiddenDefaults(updated)
+            saveHiddenDefaults(updated)
+          }
+          setOrderVersion((v) => v + 1)
+        }
       }
       resetForm()
     } catch (err) {
@@ -109,6 +164,26 @@ export function CustomCategories() {
     setFormData({ name: cat.name, type: cat.type, color: cat.color || '' })
     setEditingId(cat.id)
     setIsAdding(true)
+  }
+
+  // Editing a built-in default: promote it to a real DB category so the edit persists,
+  // then hide the original default name to avoid a duplicate. We store the original
+  // default name so handleSave can hide it once the promoted category is created.
+  const [promotingDefault, setPromotingDefault] = useState<string | null>(null)
+  const handleEditDefault = (name: string, type: CategoryType) => {
+    setFormData({ name, type, color: '' })
+    setEditingId(null)
+    setPromotingDefault(name)
+    setIsAdding(true)
+  }
+
+  // Generic pill edit dispatcher used by the ordered list.
+  const handlePillEdit = (pill: CategoryPill, type: CategoryType) => {
+    if (pill.isCustom && pill.cat) {
+      handleEdit(pill.cat)
+    } else {
+      handleEditDefault(pill.name, type)
+    }
   }
 
   const handleDelete = async (id: string, name: string) => {
@@ -255,72 +330,32 @@ export function CustomCategories() {
             <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />
           </div>
           <h3 className="text-[13px] font-bold text-foreground">Expense Categories</h3>
-          <span className="text-[10px] text-muted-foreground ml-auto">{visibleExpenseDefaults.length + expenseCategories.length}</span>
+          <span className="text-[10px] text-muted-foreground ml-auto">{expenseItems.length}</span>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {visibleExpenseDefaults.map((c) => (
-            <span key={c} className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg bg-secondary/60 text-foreground group">
-              {c}
-              <button
-                onClick={() => { setFormData({ name: c, type: 'expense', color: '' }); setEditingId(null); setIsAdding(true) }}
-                className="opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-primary transition-opacity"
-                title={`Edit ${c}`}
-              >
-                <Edit2 className="w-2.5 h-2.5" />
-              </button>
-              <button
-                onClick={() => handleHideDefault(c)}
-                className="opacity-40 hover:opacity-100 hover:text-destructive transition-opacity"
-                title={`Remove ${c}`}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </span>
-          ))}
-          <AnimatePresence mode="popLayout">
-            {expenseCategories.map((cat) => {
-              const hasColor = !!cat.color
-              return (
-                <motion.span
-                  key={cat.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg transition-colors group",
-                    hasColor
-                      ? "border border-border/40"
-                      : "bg-secondary/60 text-foreground"
-                  )}
-                  style={hasColor ? { backgroundColor: `${cat.color}12`, borderColor: `${cat.color}30` } : undefined}
-                >
-                  {hasColor && (
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
-                  )}
-                  <span className={hasColor ? "text-foreground" : ""}>{cat.name}</span>
-                  <button
-                    onClick={() => handleEdit(cat)}
-                    className="opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-primary transition-opacity ml-0.5"
-                    title={`Edit ${cat.name}`}
-                  >
-                    <Edit2 className="w-2.5 h-2.5" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(cat.id, cat.name)}
-                    className="opacity-40 hover:opacity-100 hover:text-destructive transition-opacity"
-                    title={`Delete ${cat.name}`}
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </motion.span>
-              )
-            })}
-          </AnimatePresence>
-          {visibleExpenseDefaults.length === 0 && expenseCategories.length === 0 && (
-            <p className="text-[11px] text-muted-foreground/50 py-1">No categories yet.</p>
-          )}
-        </div>
+        <p className="text-[10px] text-muted-foreground/70 -mt-1">Drag the handle to reorder. This order is used when adding expenses.</p>
+        {expenseItems.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground/50 py-1">No categories yet.</p>
+        ) : (
+          <Reorder.Group
+            axis="y"
+            values={expenseItems}
+            onReorder={(items) => handleReorder('expense', items as CategoryPill[])}
+            className="flex flex-col gap-2"
+          >
+            {expenseItems.map((pill) => (
+              <CategoryPillRow
+                key={pill.name}
+                pill={pill}
+                onEdit={() => handlePillEdit(pill, 'expense')}
+                onRemove={() =>
+                  pill.isCustom && pill.cat
+                    ? handleDelete(pill.cat.id, pill.name)
+                    : handleHideDefault(pill.name)
+                }
+              />
+            ))}
+          </Reorder.Group>
+        )}
       </div>
 
       {/* Income categories card */}
@@ -330,72 +365,32 @@ export function CustomCategories() {
             <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
           </div>
           <h3 className="text-[13px] font-bold text-foreground">Income Categories</h3>
-          <span className="text-[10px] text-muted-foreground ml-auto">{visibleIncomeDefaults.length + incomeCategories.length}</span>
+          <span className="text-[10px] text-muted-foreground ml-auto">{incomeItems.length}</span>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {visibleIncomeDefaults.map((c) => (
-            <span key={c} className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg bg-secondary/60 text-foreground group">
-              {c}
-              <button
-                onClick={() => { setFormData({ name: c, type: 'income', color: '' }); setEditingId(null); setIsAdding(true) }}
-                className="opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-primary transition-opacity"
-                title={`Edit ${c}`}
-              >
-                <Edit2 className="w-2.5 h-2.5" />
-              </button>
-              <button
-                onClick={() => handleHideDefault(c)}
-                className="opacity-40 hover:opacity-100 hover:text-destructive transition-opacity"
-                title={`Remove ${c}`}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </span>
-          ))}
-          <AnimatePresence mode="popLayout">
-            {incomeCategories.map((cat) => {
-              const hasColor = !!cat.color
-              return (
-                <motion.span
-                  key={cat.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg transition-colors group",
-                    hasColor
-                      ? "border border-border/40"
-                      : "bg-secondary/60 text-foreground"
-                  )}
-                  style={hasColor ? { backgroundColor: `${cat.color}12`, borderColor: `${cat.color}30` } : undefined}
-                >
-                  {hasColor && (
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
-                  )}
-                  <span className={hasColor ? "text-foreground" : ""}>{cat.name}</span>
-                  <button
-                    onClick={() => handleEdit(cat)}
-                    className="opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-primary transition-opacity ml-0.5"
-                    title={`Edit ${cat.name}`}
-                  >
-                    <Edit2 className="w-2.5 h-2.5" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(cat.id, cat.name)}
-                    className="opacity-40 hover:opacity-100 hover:text-destructive transition-opacity"
-                    title={`Delete ${cat.name}`}
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </motion.span>
-              )
-            })}
-          </AnimatePresence>
-          {visibleIncomeDefaults.length === 0 && incomeCategories.length === 0 && (
-            <p className="text-[11px] text-muted-foreground/50 py-1">No categories yet.</p>
-          )}
-        </div>
+        <p className="text-[10px] text-muted-foreground/70 -mt-1">Drag the handle to reorder. This order is used when adding income.</p>
+        {incomeItems.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground/50 py-1">No categories yet.</p>
+        ) : (
+          <Reorder.Group
+            axis="y"
+            values={incomeItems}
+            onReorder={(items) => handleReorder('income', items as CategoryPill[])}
+            className="flex flex-col gap-2"
+          >
+            {incomeItems.map((pill) => (
+              <CategoryPillRow
+                key={pill.name}
+                pill={pill}
+                onEdit={() => handlePillEdit(pill, 'income')}
+                onRemove={() =>
+                  pill.isCustom && pill.cat
+                    ? handleDelete(pill.cat.id, pill.name)
+                    : handleHideDefault(pill.name)
+                }
+              />
+            ))}
+          </Reorder.Group>
+        )}
       </div>
 
       {/* Restore hidden defaults */}
@@ -441,5 +436,69 @@ export function CustomCategories() {
         onCancel={() => setConfirmState({ open: false })}
       />
     </div>
+  )
+}
+
+// A single draggable category pill row. Uses a dedicated drag handle so the edit /
+// remove buttons stay clickable and dragging only starts from the grip.
+function CategoryPillRow({
+  pill,
+  onEdit,
+  onRemove,
+}: {
+  pill: CategoryPill
+  onEdit: () => void
+  onRemove: () => void
+}) {
+  const controls = useDragControls()
+  const hasColor = !!pill.color
+
+  return (
+    <Reorder.Item
+      value={pill}
+      dragListener={false}
+      dragControls={controls}
+      className={cn(
+        'flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-xl transition-colors group select-none',
+        hasColor ? 'border border-border/40' : 'bg-secondary/60 text-foreground'
+      )}
+      style={hasColor ? { backgroundColor: `${pill.color}12`, borderColor: `${pill.color}30` } : undefined}
+    >
+      <button
+        type="button"
+        onPointerDown={(e) => controls.start(e)}
+        className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground touch-none"
+        title="Drag to reorder"
+        aria-label={`Reorder ${pill.name}`}
+      >
+        <GripVertical className="w-3.5 h-3.5" />
+      </button>
+
+      {hasColor && (
+        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: pill.color }} />
+      )}
+      <span className="flex-1 truncate">{pill.name}</span>
+
+      {!pill.isCustom && (
+        <span className="text-[9px] uppercase tracking-wide text-muted-foreground/40 font-semibold">default</span>
+      )}
+
+      <button
+        type="button"
+        onClick={onEdit}
+        className="opacity-50 hover:opacity-100 hover:text-primary transition-opacity"
+        title={`Edit ${pill.name}`}
+      >
+        <Edit2 className="w-3 h-3" />
+      </button>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="opacity-40 hover:opacity-100 hover:text-destructive transition-opacity"
+        title={pill.isCustom ? `Delete ${pill.name}` : `Remove ${pill.name}`}
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </Reorder.Item>
   )
 }

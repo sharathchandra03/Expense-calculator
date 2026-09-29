@@ -1,7 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { db } from '@/db/schema'
 import { User, Session } from '@supabase/supabase-js'
 
@@ -9,7 +9,8 @@ interface AuthContextType {
   user: User | null
   session: Session | null
   loading: boolean
-  signInWithGoogle: () => Promise<void>
+  isConfigured: boolean
+  signInWithGoogle: () => Promise<{ error?: string }>
   signOut: () => Promise<void>
 }
 
@@ -17,7 +18,8 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   loading: true,
-  signInWithGoogle: async () => {},
+  isConfigured: false,
+  signInWithGoogle: async () => ({}),
   signOut: async () => {},
 })
 
@@ -60,6 +62,7 @@ async function clearLocalUserData() {
     'finance-os-notifications',
     'finance-os-onboarding-done',
     'pennyflow-hidden-categories',
+    'pennyflow-category-order',
     'pennyflow-custom-account-types',
     'pennyflow-hidden-account-types',
     'pennyflow-dash-order',
@@ -79,17 +82,54 @@ async function clearLocalUserData() {
   keysToRemove.forEach(key => localStorage.removeItem(key))
 }
 
+/**
+ * Remove OAuth artifacts (?code=, ?state=, #access_token=...) from the URL
+ * after the session has been established, without triggering a navigation.
+ * Preserves any legitimate app params (e.g. ?tab=, ?action=).
+ */
+function cleanOAuthParamsFromUrl() {
+  try {
+    const url = new URL(window.location.href)
+    const oauthParams = ['code', 'state', 'error', 'error_description', 'provider_token']
+    let changed = false
+    oauthParams.forEach((p) => {
+      if (url.searchParams.has(p)) {
+        url.searchParams.delete(p)
+        changed = true
+      }
+    })
+    // Implicit-flow tokens land in the hash fragment.
+    if (url.hash && /access_token|refresh_token|expires_in/.test(url.hash)) {
+      url.hash = ''
+      changed = true
+    }
+    if (changed) {
+      window.history.replaceState({}, '', url.toString())
+    }
+  } catch {
+    // Non-fatal — URL cleanup is cosmetic.
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Get initial session
+    if (!isSupabaseConfigured) {
+      // No credentials — run fully local, don't attempt any auth calls.
+      setLoading(false)
+      return
+    }
+
+    // Get initial session. With detectSessionInUrl + PKCE, the client
+    // exchanges the OAuth `?code=` here before resolving the session.
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setUser(session?.user ?? null)
       setLoading(false)
+      if (session) cleanOAuthParamsFromUrl()
     })
 
     // Listen for auth changes
@@ -97,18 +137,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session)
       setUser(session?.user ?? null)
       setLoading(false)
+      if (session) cleanOAuthParamsFromUrl()
     })
 
     return () => subscription.unsubscribe()
   }, [])
 
-  const signInWithGoogle = async () => {
-    await supabase.auth.signInWithOAuth({
+  const signInWithGoogle = async (): Promise<{ error?: string }> => {
+    if (!isSupabaseConfigured) {
+      return { error: 'Cloud sync is not configured. Missing Supabase credentials.' }
+    }
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
+        // Return to a clean origin so the OAuth code param doesn't collide
+        // with the app's own ?tab= / ?action= handling.
         redirectTo: window.location.origin,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
       },
     })
+    if (error) {
+      return { error: error.message }
+    }
+    // On success the browser redirects to Google; nothing else to do here.
+    return {}
   }
 
   const signOut = async () => {
@@ -119,7 +174,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Sign out from Supabase
-    await supabase.auth.signOut()
+    if (isSupabaseConfigured) {
+      await supabase.auth.signOut().catch(() => {})
+    }
 
     // Clear all local data so next login shows fresh/correct account
     await clearLocalUserData()
@@ -132,7 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, isConfigured: isSupabaseConfigured, signInWithGoogle, signOut }}>
       {children}
     </AuthContext.Provider>
   )

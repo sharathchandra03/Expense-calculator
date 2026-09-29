@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, Goal, generateUUID } from '@/db/schema'
+import { db, Goal, generateUUID, syncAccountToAsset } from '@/db/schema'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, cn } from '@/lib/utils'
@@ -20,8 +20,11 @@ export function GoalsDashboard() {
   const [customAmountId, setCustomAmountId] = useState<string | null>(null)
   const [customAmount, setCustomAmount] = useState('')
   const [formData, setFormData] = useState({
-    title: '', targetAmount: 0, targetDate: '', category: 'General'
+    title: '', targetAmount: 0, targetDate: '', category: 'General', fundingAccountId: ''
   })
+
+  const accounts = useLiveQuery(() => db.accounts.toArray()) ?? []
+  const safeAccounts = Array.isArray(accounts) ? accounts : []
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id?: string; title?: string }>({ open: false })
   const { showUndo } = useUndo()
   const { showToast } = useToast()
@@ -34,24 +37,80 @@ export function GoalsDashboard() {
     try {
       await db.goals.add({
         id: generateUUID(),
-        ...formData,
+        title: formData.title,
+        targetAmount: formData.targetAmount,
+        targetDate: formData.targetDate,
+        category: formData.category,
+        fundingAccountId: formData.fundingAccountId || undefined,
         currentAmount: 0,
         priority: 'medium',
         autoSave: false,
       })
-      setFormData({ title: '', targetAmount: 0, targetDate: '', category: 'General' })
+      setFormData({ title: '', targetAmount: 0, targetDate: '', category: 'General', fundingAccountId: '' })
       setIsAdding(false)
     } catch (err) {
       console.error('Error saving goal:', err)
     }
   }
 
+  /**
+   * Apply a goal contribution (positive) or withdrawal (negative delta).
+   * If the goal has a fundingAccountId, the money actually moves:
+   *  - contribution → expense out of the account (transfer to savings)
+   *  - withdrawal   → income back into the account
+   * Otherwise it's a counter-only update (legacy behavior).
+   */
+  const applyGoalDelta = async (goal: Goal, delta: number) => {
+    // Clamp so we never exceed target or go below zero.
+    const targetAmount = goal.targetAmount
+    const nextAmount = Math.max(0, Math.min(targetAmount, goal.currentAmount + delta))
+    const actualDelta = nextAmount - goal.currentAmount
+    if (actualDelta === 0) return
+
+    const account = goal.fundingAccountId
+      ? await db.accounts.get(goal.fundingAccountId)
+      : undefined
+
+    await db.transaction('rw', [db.goals, db.accounts, db.assets, db.transactions, db.systemLogs], async () => {
+      await db.goals.update(goal.id, { currentAmount: nextAmount })
+
+      if (account) {
+        const isContribution = actualDelta > 0
+        const magnitude = Math.abs(actualDelta)
+        // Move real money: contribution leaves the account, withdrawal returns.
+        const newBalance = account.balance + (isContribution ? -magnitude : magnitude)
+        await db.accounts.update(account.id, { balance: newBalance })
+        await syncAccountToAsset(account.name, newBalance)
+
+        await db.transactions.add({
+          id: generateUUID(),
+          date: new Date().toISOString().split('T')[0],
+          type: isContribution ? 'expense' : 'income',
+          category: isContribution ? 'Savings' : 'Savings Withdrawal',
+          amount: magnitude,
+          accountId: account.id,
+          description: isContribution
+            ? `Contribution to goal: ${goal.title}`
+            : `Withdrawal from goal: ${goal.title}`,
+          isRecurring: false,
+        } as any)
+
+        await db.systemLogs.add({
+          id: generateUUID(),
+          timestamp: new Date().toISOString(),
+          type: 'goal',
+          description: isContribution
+            ? `Moved ${formatCurrency(magnitude)} from ${account.name} to goal "${goal.title}"`
+            : `Returned ${formatCurrency(magnitude)} from goal "${goal.title}" to ${account.name}`,
+          amount: isContribution ? -magnitude : magnitude,
+        } as any)
+      }
+    })
+  }
+
   const handleUpdateProgress = async (id: string, increment: number) => {
     const goal = safeGoals.find(g => g.id === id)
-    if (goal) {
-      const newAmount = Math.min(goal.targetAmount, goal.currentAmount + increment)
-      await db.goals.update(id, { currentAmount: newAmount })
-    }
+    if (goal) await applyGoalDelta(goal, increment)
   }
 
   const handleCustomAmountAdd = async (id: string) => {
@@ -62,8 +121,7 @@ export function GoalsDashboard() {
     }
     const goal = safeGoals.find(g => g.id === id)
     if (goal) {
-      const newAmount = Math.min(goal.targetAmount, goal.currentAmount + amount)
-      await db.goals.update(id, { currentAmount: newAmount })
+      await applyGoalDelta(goal, amount)
       setCustomAmount('')
       setCustomAmountId(null)
     }
@@ -71,10 +129,7 @@ export function GoalsDashboard() {
 
   const handleWithdraw = async (id: string, amount: number) => {
     const goal = safeGoals.find(g => g.id === id)
-    if (goal) {
-      const newAmount = Math.max(0, goal.currentAmount - amount)
-      await db.goals.update(id, { currentAmount: newAmount })
-    }
+    if (goal) await applyGoalDelta(goal, -amount)
   }
 
   const handleDelete = async (id: string) => {
@@ -265,6 +320,22 @@ export function GoalsDashboard() {
           <Input type="number" placeholder="Target Amount" value={formData.targetAmount || ''} onChange={(e) => setFormData({...formData, targetAmount: parseFloat(e.target.value) || 0})} />
           <DatePicker value={formData.targetDate} onChange={(d) => setFormData({...formData, targetDate: d})} />
           <Input placeholder="Category (e.g., Travel, Emergency)" value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} />
+          <div>
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase">Funding Account (optional)</label>
+            <select
+              value={formData.fundingAccountId}
+              onChange={(e) => setFormData({ ...formData, fundingAccountId: e.target.value })}
+              className="w-full h-10 mt-1 px-3 rounded-xl bg-card border border-border/50 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
+            >
+              <option value="">Don&apos;t track (counter only)</option>
+              {safeAccounts.map(a => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              If set, contributions move real money out of this account and withdrawals return it.
+            </p>
+          </div>
           <div className="flex gap-2">
             <button onClick={handleSave} className="flex-1 h-10 rounded-full bg-foreground text-background font-semibold text-xs uppercase flex items-center justify-center gap-1">
               Save
@@ -304,6 +375,8 @@ export function GoalsDashboard() {
 function EditGoalForm({ goalId, goals, onClose }: { goalId: string; goals: Goal[]; onClose: () => void }) {
   const goal = goals.find(g => g.id === goalId)
   const { showToast } = useToast()
+  const accounts = useLiveQuery(() => db.accounts.toArray()) ?? []
+  const safeAccounts = Array.isArray(accounts) ? accounts : []
   const [data, setData] = useState({
     title: goal?.title || '',
     targetAmount: goal?.targetAmount?.toString() || '',
@@ -311,6 +384,7 @@ function EditGoalForm({ goalId, goals, onClose }: { goalId: string; goals: Goal[
     targetDate: goal?.targetDate || '',
     category: goal?.category || 'General',
     priority: (goal?.priority || 'medium') as 'low' | 'medium' | 'high',
+    fundingAccountId: goal?.fundingAccountId || '',
   })
 
   if (!goal) return null
@@ -337,6 +411,7 @@ function EditGoalForm({ goalId, goals, onClose }: { goalId: string; goals: Goal[
         targetDate: data.targetDate,
         category: data.category,
         priority: data.priority,
+        fundingAccountId: data.fundingAccountId || undefined,
       })
       onClose()
     } catch {
@@ -437,6 +512,23 @@ function EditGoalForm({ goalId, goals, onClose }: { goalId: string; goals: Goal[
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground uppercase">Funding Account</label>
+          <select
+            value={data.fundingAccountId}
+            onChange={(e) => setData({ ...data, fundingAccountId: e.target.value })}
+            className="w-full h-10 mt-1.5 px-3 rounded-xl bg-secondary border border-border/50 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
+          >
+            <option value="">Don&apos;t track (counter only)</option>
+            {safeAccounts.map(a => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            When set, contributing moves money out of this account; withdrawing returns it.
+          </p>
         </div>
 
         <div className="flex gap-2 pt-1">

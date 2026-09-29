@@ -4,6 +4,8 @@ import React, { useState } from 'react'
 import { LayoutDashboard, Wallet, TrendingUp, Landmark, Settings, Plus, Heart, Calendar, BarChart3, Bell, Target, TrendingDown, X, Tag, CreditCard, Users, Camera, Upload, Home, Clock, User, RefreshCw, HelpCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { db } from '@/db/schema'
 
 export type TabType = 'dashboard' | 'ledger' | 'accounts' | 'analytics' | 'budgets' | 'bills' | 'subscriptions' | 'goals' | 'debtplanner' | 'categories' | 'receipts' | 'splits' | 'investments' | 'lending' | 'assets' | 'reports' | 'notifications' | 'csvimport' | 'settings' | 'about' | 'support' | 'health';
 
@@ -49,6 +51,13 @@ const DEFAULT_NAV_ITEMS: NavItem[] = [
 export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNavProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [navItems] = useState<NavItem[]>(DEFAULT_NAV_ITEMS)
+
+  // Live unread notification count for the Profile + Notifications badges.
+  const unreadCount = useLiveQuery(
+    async () => db.notifications.filter(n => !n.read).count(),
+    [],
+    0
+  ) ?? 0
 
   const handleNavClick = (tab: TabType) => {
     setActiveTab(tab)
@@ -105,10 +114,17 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
           {/* Profile — opens drawer */}
           <button
             onClick={() => setIsOpen(true)}
-            className="flex flex-col items-center justify-center gap-0.5 w-16 h-full"
-            aria-label="Open navigation menu"
+            className="relative flex flex-col items-center justify-center gap-0.5 w-16 h-full"
+            aria-label={unreadCount > 0 ? `Open navigation menu, ${unreadCount} unread notifications` : 'Open navigation menu'}
           >
-            <User className="h-[22px] w-[22px] text-muted-foreground" strokeWidth={1.7} />
+            <div className="relative">
+              <User className="h-[22px] w-[22px] text-muted-foreground" strokeWidth={1.7} />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </div>
             <span className="text-[10px] font-medium text-muted-foreground">Profile</span>
           </button>
         </div>
@@ -213,10 +229,16 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
               {navItems.slice(13).map((item) => {
                 const Icon = item.icon
                 const isActive = activeTab === item.id
+                const showBadge = item.id === 'notifications' && unreadCount > 0
                 return (
                   <button key={item.id} onClick={() => handleNavClick(item.id)} className={cn('w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] transition-colors', isActive ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground')}>
                     <Icon className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
                     <span>{item.label}</span>
+                    {showBadge && (
+                      <span className="ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full bg-destructive text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
                   </button>
                 )
               })}

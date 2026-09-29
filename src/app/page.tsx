@@ -6,6 +6,7 @@ import { seedDatabaseIfEmpty } from '@/db/schema'
 import { BottomNav, TabType } from '@/components/layout/bottom-nav'
 import { Dashboard } from '@/components/modules/dashboard'
 import { RecurringTransactionService } from '@/services/RecurringTransactionService'
+import { NotificationGenerator } from '@/services/NotificationGenerator'
 import { AnimatePresence, motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
@@ -78,8 +79,14 @@ export default function Home() {
         await seedDatabaseIfEmpty()
         setDbReady(true)
 
-        // Process recurring transactions on app load
-        RecurringTransactionService.processRecurrences().catch(() => {})
+        // Process recurring transactions on app load, then generate any
+        // due-bill / budget / goal notifications (recurrences first so newly
+        // created bills/transactions are reflected in the alerts).
+        RecurringTransactionService.processRecurrences()
+          .catch(() => {})
+          .finally(() => {
+            NotificationGenerator.generateAll().catch(() => {})
+          })
       } catch {
         setDbReady(true) // continue anyway
       }

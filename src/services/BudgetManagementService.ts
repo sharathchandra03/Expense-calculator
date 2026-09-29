@@ -28,29 +28,34 @@ export class BudgetManagementService {
     startDate: string,
     endDate: string
   ): number {
-    const start = new Date(startDate)
-    const end = new Date(endDate)
+    const start = new Date(startDate + 'T00:00:00')
+    const end = new Date(endDate + 'T00:00:00')
 
     return transactions
       .filter(tx => {
-        const txDate = new Date(tx.date)
+        const txDate = new Date(tx.date + 'T00:00:00')
         return (
           tx.type === 'expense' &&
           tx.category === category &&
           txDate >= start &&
-          txDate <= end
+          // end is exclusive (it's the start of the next period) so a
+          // transaction on the boundary counts toward the new period only.
+          txDate < end
         )
       })
       .reduce((sum, tx) => sum + tx.amount, 0)
   }
 
   /**
-   * Get budget status with visual indicators
+   * Get budget status with visual indicators.
+   * The window (start/end) passed in is the CURRENT period the budget applies
+   * to — see getCurrentPeriod — so `spent` and `daysLeft` reflect the active
+   * period, not the original creation window.
    */
-  static getBudgetStatus(budget: Budget, spent: number): BudgetStatus {
+  static getBudgetStatus(budget: Budget, spent: number, periodEnd: string): BudgetStatus {
     const remaining = Math.max(0, budget.limit - spent)
-    const percentUsed = (spent / budget.limit) * 100
-    
+    const percentUsed = budget.limit > 0 ? (spent / budget.limit) * 100 : 0
+
     // Determine status based on threshold
     let status: 'under' | 'warning' | 'exceeded' = 'under'
     if (percentUsed >= 100) {
@@ -59,10 +64,9 @@ export class BudgetManagementService {
       status = 'warning'
     }
 
-    // Calculate days left in period
-    const endDate = budget.endDate || this.getEndDateForPeriod(budget.startDate, budget.period)
-    const daysLeft = Math.max(0, Math.ceil((new Date(endDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))
-    const averageDailySpend = daysLeft > 0 ? spent / (daysLeft || 1) : 0
+    // Days left until the current period ends
+    const daysLeft = Math.max(0, Math.ceil((new Date(periodEnd).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))
+    const averageDailySpend = daysLeft > 0 ? spent / daysLeft : spent
 
     return {
       budgetId: budget.id,
@@ -79,16 +83,76 @@ export class BudgetManagementService {
   }
 
   /**
-   * Get all budget statuses
+   * Get all budget statuses, each evaluated against its CURRENT period window
+   * (rolled forward from the original start date) so recurring budgets keep
+   * tracking spend after their first period elapses.
    */
   static getAllBudgetStatuses(budgets: Budget[], transactions: Transaction[]): BudgetStatus[] {
     return budgets
       .filter(b => b.isActive)
       .map(budget => {
-        const endDate = budget.endDate || this.getEndDateForPeriod(budget.startDate, budget.period)
-        const spent = this.calculateCategorySpend(transactions, budget.category, budget.startDate, endDate)
-        return this.getBudgetStatus(budget, spent)
+        const { start, end } = this.getCurrentPeriod(budget)
+        const spent = this.calculateCategorySpend(transactions, budget.category, start, end)
+        return this.getBudgetStatus(budget, spent, end)
       })
+  }
+
+  /**
+   * Compute the active period window for a budget.
+   *
+   * - If the budget has an explicit `endDate`, it's a fixed-term budget and is
+   *   NOT rolled — the window is [startDate, endDate].
+   * - Otherwise the window rolls forward by `period` until it contains today,
+   *   so a monthly budget created on Jan 1 tracks Feb 1–Mar 1 during February,
+   *   and so on. Budgets whose start date is in the future use their first
+   *   upcoming period.
+   *
+   * Returns YYYY-MM-DD start (inclusive) and end (exclusive-ish) strings.
+   */
+  static getCurrentPeriod(budget: Budget): { start: string; end: string } {
+    // Fixed-term budget: honor the explicit window, no rollover.
+    if (budget.endDate) {
+      return { start: budget.startDate, end: budget.endDate }
+    }
+
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+
+    let start = new Date(budget.startDate + 'T00:00:00')
+    // Guard against malformed dates.
+    if (isNaN(start.getTime())) {
+      start = new Date(now)
+    }
+
+    const advance = (d: Date): Date => {
+      const next = new Date(d)
+      switch (budget.period) {
+        case 'weekly':
+          next.setDate(next.getDate() + 7)
+          break
+        case 'monthly':
+          next.setMonth(next.getMonth() + 1)
+          break
+        case 'yearly':
+          next.setFullYear(next.getFullYear() + 1)
+          break
+      }
+      return next
+    }
+
+    let end = advance(start)
+
+    // Roll forward until `now` falls within [start, end). Cap iterations to
+    // avoid any chance of an infinite loop on bad data.
+    let guard = 0
+    while (end.getTime() <= now.getTime() && guard < 10000) {
+      start = end
+      end = advance(start)
+      guard++
+    }
+
+    const toStr = (d: Date) => d.toISOString().split('T')[0]
+    return { start: toStr(start), end: toStr(end) }
   }
 
   /**

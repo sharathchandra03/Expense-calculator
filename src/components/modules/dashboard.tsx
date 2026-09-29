@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, Transaction, Lending, Asset, Goal, Bill, generateUUID, syncAccountToAsset } from '@/db/schema'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { formatCurrency, cn } from '@/lib/utils'
-import { ArrowUpRight, ArrowDownRight, Sparkles, Target, Calendar, ArrowRight, ShieldCheck, AlertCircle, ShoppingBag, Plus, Zap, TrendingUp, TrendingDown, DollarSign, Heart, Clock, UtensilsCrossed, Car, ShoppingCart, Receipt, MoreHorizontal, X, Check, Settings } from 'lucide-react'
+import { ArrowUpRight, ArrowDownRight, Sparkles, Target, Calendar, ArrowRight, ShieldCheck, AlertCircle, ShoppingBag, Plus, Zap, TrendingUp, TrendingDown, DollarSign, Heart, Clock, UtensilsCrossed, Car, ShoppingCart, Receipt, MoreHorizontal, X, Check, Settings, Wallet } from 'lucide-react'
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import { DatePicker } from '@/components/ui/date-picker'
 import { TimePicker } from '@/components/ui/time-picker'
@@ -382,7 +382,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
             </button>
           </div>
 
-          {/* Balance */}
+          {/* Net balance (top KPI) */}
           {(() => {
             const full = formatCurrency(netWorth)
             const dot = full.lastIndexOf('.')
@@ -399,6 +399,13 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
           <p className={cn("text-[12px] font-medium mt-2.5", monthNet >= 0 ? "text-emerald-300" : "text-rose-300")}>
             {monthNet >= 0 ? '+' : ''}{monthTrendPct}% · {monthNet >= 0 ? 'You crushed it this month. Keep going!' : 'Spending outpaced income this month.'}
           </p>
+
+          {/* Total income received this month — secondary stat */}
+          <div className="mt-4 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/12">
+            <Wallet className="w-3.5 h-3.5 text-white/60" />
+            <span className="text-[11px] font-medium text-white/60">Income this month</span>
+            <span className="text-[13px] font-bold text-white">{formatCurrency(monthIncomeTotal)}</span>
+          </div>
 
           {/* Account pills */}
           <div className="flex items-center gap-2 mt-5 overflow-x-auto pb-0.5">

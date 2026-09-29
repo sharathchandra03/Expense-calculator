@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { db } from '@/db/schema'
 
 const SYNC_TABLES = [
@@ -19,6 +19,7 @@ const SYNC_TABLES = [
   'subscriptions',
   'templates',
   'splits',
+  'sharedWallets',
 ] as const
 
 type SyncTable = typeof SYNC_TABLES[number]
@@ -40,6 +41,7 @@ export class SyncService {
    * SAFETY: Will NOT push if all major tables are empty (prevents accidental cloud wipe).
    */
   static async pushToCloud(userId: string): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured) return { success: false, error: 'Cloud sync not configured' }
     try {
       // Safety check: don't push if local DB appears empty
       // (prevents overwriting cloud backup with nothing)
@@ -115,6 +117,7 @@ export class SyncService {
    * For merge scenarios, use mergeFromCloud() instead.
    */
   static async pullFromCloud(userId: string): Promise<{ success: boolean; error?: string; isEmpty?: boolean }> {
+    if (!isSupabaseConfigured) return { success: false, error: 'Cloud sync not configured' }
     try {
       const { data: rows, error } = await supabase
         .from('user_data')
@@ -194,6 +197,7 @@ export class SyncService {
    * This preserves guest data while also restoring any previous cloud data the user had.
    */
   static async mergeLocalIntoCloud(userId: string): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured) return { success: false, error: 'Cloud sync not configured' }
     try {
       // First, fetch what's in the cloud
       const { data: rows, error } = await supabase

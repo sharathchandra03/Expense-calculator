@@ -65,6 +65,7 @@ export interface Goal {
   milestones?: Array<{ amount: number; date: string; completed: boolean }>; // NEW
   autoSave?: boolean; // NEW: Auto-save toward goal
   autoSaveAmount?: number; // NEW: Monthly auto-save amount
+  fundingAccountId?: string; // NEW: when set, contributions/withdrawals move real money to/from this account
 }
 
 // Define accounts structure

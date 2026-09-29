@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, SplitExpense, generateUUID } from '@/db/schema'
+import { db, SplitExpense, generateUUID, syncAccountToAsset } from '@/db/schema'
 import { formatCurrency, cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Users, Plus, Check, X, Divide, Percent, Hash, ChevronRight, UserCheck, AlertCircle } from 'lucide-react'
@@ -89,29 +89,81 @@ export function SplitExpenses() {
   )
 }
 
+// Names that represent the app owner (self) — settling THEIR share doesn't
+// bring money in, only when OTHERS pay the owner back does cash arrive.
+const SELF_NAMES = ['you', 'me', 'self', 'myself']
+
 function SplitCard({ split }: { split: SplitExpense }) {
   const [expanded, setExpanded] = useState(false)
+  // Which participant is mid-settlement (showing the account picker), if any.
+  const [settling, setSettling] = useState<string | null>(null)
+  const [depositAccountId, setDepositAccountId] = useState<string>('')
+
+  const accounts = useLiveQuery(() => db.accounts.toArray()) ?? []
+  const safeAccounts = Array.isArray(accounts) ? accounts : []
+
   const unsettled = split.participants.filter(p => !p.settled && p.name !== split.paidBy)
   const allSettled = unsettled.length === 0
 
-  const handleSettle = async (participantName: string) => {
+  // The owner receives money only if THEY are the payer.
+  const ownerIsPayer = SELF_NAMES.includes(split.paidBy.trim().toLowerCase())
+
+  const beginSettle = (participantName: string) => {
+    if (!ownerIsPayer || safeAccounts.length === 0) {
+      // No real money movement possible (owner didn't pay, or no accounts) —
+      // just mark settled without a transaction.
+      finalizeSettle(participantName, null)
+      return
+    }
+    setDepositAccountId(safeAccounts[0].id)
+    setSettling(participantName)
+  }
+
+  const finalizeSettle = async (participantName: string, accountId: string | null) => {
     const participant = split.participants.find(p => p.name === participantName)
+    const amount = participant?.amount || 0
     const updated = split.participants.map(p =>
       p.name === participantName ? { ...p, settled: true } : p
     )
 
-    await db.transaction('rw', [db.splits, db.systemLogs], async () => {
+    await db.transaction('rw', [db.splits, db.transactions, db.accounts, db.assets, db.systemLogs], async () => {
       await db.splits.update(split.id, { participants: updated })
 
-      // Log the settlement
+      // If the owner paid and we have a target account, the settlement is real
+      // money coming back → record it as income and credit the account.
+      if (accountId && amount > 0) {
+        const txId = generateUUID()
+        await db.transactions.add({
+          id: txId,
+          date: new Date().toISOString().split('T')[0],
+          type: 'income',
+          category: 'Reimbursement',
+          amount,
+          accountId,
+          description: `Split settled by ${participantName}`,
+          isRecurring: false,
+        } as any)
+
+        const account = await db.accounts.get(accountId)
+        if (account) {
+          const newBalance = account.balance + amount
+          await db.accounts.update(accountId, { balance: newBalance })
+          await syncAccountToAsset(account.name, newBalance)
+        }
+      }
+
       await db.systemLogs.add({
         id: generateUUID(),
         timestamp: new Date().toISOString(),
         type: 'lending',
-        description: `${participantName} settled ₹${participant?.amount?.toLocaleString() || 0} from split expense`,
-        amount: participant?.amount || 0,
+        description: accountId
+          ? `${participantName} repaid ${formatCurrency(amount)} for a split (added to account)`
+          : `${participantName} settled ${formatCurrency(amount)} from split expense`,
+        amount,
       })
     })
+
+    setSettling(null)
   }
 
   return (
@@ -150,24 +202,69 @@ function SplitCard({ split }: { split: SplitExpense }) {
           >
             <div className="mt-3 pt-3 border-t border-border/30 space-y-2">
               {split.participants.map((p, i) => (
-                <div key={i} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <UserCheck className={cn("w-3.5 h-3.5", p.settled ? "text-emerald-500" : "text-muted-foreground")} />
-                    <span className={cn("text-xs", p.settled ? "text-muted-foreground line-through" : "text-foreground font-medium")}>
-                      {p.name}
-                    </span>
+                <div key={i} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <UserCheck className={cn("w-3.5 h-3.5", p.settled ? "text-emerald-500" : "text-muted-foreground")} />
+                      <span className={cn("text-xs", p.settled ? "text-muted-foreground line-through" : "text-foreground font-medium")}>
+                        {p.name}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold">{formatCurrency(p.amount)}</span>
+                      {!p.settled && p.name !== split.paidBy && settling !== p.name && (
+                        <button
+                          onClick={() => beginSettle(p.name)}
+                          className="px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-[9px] font-bold hover:bg-emerald-500/20"
+                        >
+                          Settle
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold">{formatCurrency(p.amount)}</span>
-                    {!p.settled && p.name !== split.paidBy && (
-                      <button
-                        onClick={() => handleSettle(p.name)}
-                        className="px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-[9px] font-bold hover:bg-emerald-500/20"
+
+                  {/* Inline account picker: where the repaid money lands */}
+                  {settling === p.name && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="overflow-hidden rounded-xl bg-secondary/50 border border-border/50 p-2.5 space-y-2"
+                    >
+                      <p className="text-[10px] font-semibold text-muted-foreground">
+                        Add {formatCurrency(p.amount)} to which account?
+                      </p>
+                      <select
+                        value={depositAccountId}
+                        onChange={(e) => setDepositAccountId(e.target.value)}
+                        className="w-full h-8 px-2 rounded-lg bg-card border border-border/50 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/60"
                       >
-                        Settle
-                      </button>
-                    )}
-                  </div>
+                        {safeAccounts.map(a => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                      </select>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => finalizeSettle(p.name, depositAccountId)}
+                          className="flex-1 h-8 rounded-lg bg-emerald-500 text-white text-[10px] font-bold hover:opacity-90"
+                        >
+                          Confirm & Add Income
+                        </button>
+                        <button
+                          onClick={() => finalizeSettle(p.name, null)}
+                          className="h-8 px-2.5 rounded-lg bg-secondary text-muted-foreground text-[10px] font-semibold hover:text-foreground"
+                          title="Mark settled without recording income"
+                        >
+                          Just mark settled
+                        </button>
+                        <button
+                          onClick={() => setSettling(null)}
+                          className="h-8 px-2 rounded-lg hover:bg-secondary text-muted-foreground"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
                 </div>
               ))}
             </div>

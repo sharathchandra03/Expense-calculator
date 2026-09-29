@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
 import { SyncService } from '@/services/SyncService'
+import { isSupabaseConfigured } from '@/lib/supabase'
 import { db } from '@/db/schema'
 
 const DEBOUNCE_MS = 3000 // Wait 3 seconds after last change before pushing
@@ -35,6 +36,7 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
   // Case 2: Local is empty (fresh login after logout) → restore from cloud
   // Case 3: Already linked, local has data → push as backup
   useEffect(() => {
+    if (!isSupabaseConfigured) return
     if (!user || loading) return
     if (hasInitialized.current) return
 
@@ -82,7 +84,7 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
 
   // Auto-push after any local DB change (debounced)
   useEffect(() => {
-    if (!user) return
+    if (!isSupabaseConfigured || !user) return
 
     const debouncedPush = () => {
       if (pushTimer.current) clearTimeout(pushTimer.current)
@@ -143,7 +145,7 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
   // On app focus: push local changes to cloud (NEVER pull/overwrite)
   // This ensures cloud always has the latest without risking local data
   useEffect(() => {
-    if (!user) return
+    if (!isSupabaseConfigured || !user) return
     let lastPushTime = 0
     const MIN_PUSH_INTERVAL = 30000 // 30 seconds
 

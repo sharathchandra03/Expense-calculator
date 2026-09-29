@@ -6,6 +6,7 @@ import { db, generateUUID } from '@/db/schema'
 import { cn } from '@/lib/utils'
 import { ChevronDown, Check, Plus, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { sortCategories } from '@/lib/category-order'
 
 const COLOR_OPTIONS = [
   '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -33,11 +34,26 @@ export function CategorySelect({ type, value, onChange, placeholder, className, 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // 'bill' shares the 'expense' category pool
+  const effectiveType: 'expense' | 'income' = type === 'bill' ? 'expense' : type
+
   const customCategories = useLiveQuery(() =>
-    db.customCategories.where('type').equals(type === 'bill' ? 'expense' : type).toArray()
+    db.customCategories.where('type').equals(effectiveType).toArray()
   ) ?? []
 
+  const transactions = useLiveQuery(() => db.transactions.toArray()) ?? []
+
   const defaults = type === 'expense' ? DEFAULT_EXPENSE : type === 'income' ? DEFAULT_INCOME : DEFAULT_BILL
+
+  // Usage count per category name (most-used bubbles to the top)
+  const usageCount = React.useMemo(() => {
+    const map: Record<string, number> = {}
+    const list = Array.isArray(transactions) ? transactions : []
+    list.forEach((tx) => {
+      if (tx?.category) map[tx.category] = (map[tx.category] || 0) + 1
+    })
+    return map
+  }, [transactions])
 
   // Get hidden categories from localStorage
   const hiddenDefaults = React.useMemo(() => {
@@ -51,17 +67,18 @@ export function CategorySelect({ type, value, onChange, placeholder, className, 
 
   const allCategories = React.useMemo(() => {
     const customNames = customCategories.map(c => c.name.toLowerCase())
-    const result: { name: string; color?: string; isCustom: boolean }[] = []
+    const result: { name: string; color?: string; isCustom: boolean; createdAt?: string }[] = []
     defaults.forEach(name => {
       if (!customNames.includes(name.toLowerCase()) && !hiddenDefaults.includes(name)) {
         result.push({ name, color: undefined, isCustom: false })
       }
     })
     customCategories.forEach(c => {
-      result.push({ name: c.name, color: c.color, isCustom: true })
+      result.push({ name: c.name, color: c.color, isCustom: true, createdAt: c.createdAt })
     })
-    return result
-  }, [defaults, customCategories, hiddenDefaults])
+    // Order: manual reorder (synced with Categories screen) -> most used -> recently added
+    return sortCategories(result, effectiveType, usageCount)
+  }, [defaults, customCategories, hiddenDefaults, effectiveType, usageCount])
 
   const selectedCat = allCategories.find(c => c.name === value)
 

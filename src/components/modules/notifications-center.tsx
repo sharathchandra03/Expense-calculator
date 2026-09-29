@@ -1,19 +1,24 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/schema'
-import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { formatCurrency } from '@/lib/utils'
 import { Bell, Trash2, CheckCircle2, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { NotificationService } from '@/services/NotificationService'
+import { NotificationGenerator } from '@/services/NotificationGenerator'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 export function NotificationsCenter() {
   const [clearConfirm, setClearConfirm] = useState(false)
+
+  // Refresh alerts when the user opens this tab so bills/budgets/goals that
+  // changed mid-session surface without needing an app reload. Deduped by
+  // stable ids in the generator, so this won't create duplicates.
+  useEffect(() => {
+    NotificationGenerator.generateAll().catch(() => {})
+  }, [])
   const notifications = useLiveQuery(() => db.notifications.orderBy('timestamp').reverse().toArray()) ?? []
   const safeNotifications = Array.isArray(notifications) ? notifications : []
 
