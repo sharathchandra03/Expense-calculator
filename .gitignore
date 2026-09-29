@@ -96,3 +96,7 @@ supabase-schema.sql
 
 # Kiro AI
 .kiro/
+
+# Supabase CLI local state (machine-specific, do not commit)
+supabase/.temp/
+supabase/.branches/
