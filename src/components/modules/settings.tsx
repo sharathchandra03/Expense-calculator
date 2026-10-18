@@ -15,7 +15,7 @@ import {
   FileJson, Database, RotateCcw, Camera, Image, Fingerprint,
   Sliders, Clock, LayoutDashboard, BarChart3, SortDesc, Smartphone, Calendar
 } from 'lucide-react'
-import { useAppLock } from '@/providers/AppLockProvider'
+import { useAppLock, LOCK_DELAY_OPTIONS } from '@/providers/AppLockProvider'
 import { AppConfig, getAppConfig, updateAppConfig } from '@/lib/app-config'
 import { PlatformService } from '@/services/PlatformService'
 import { WidgetService } from '@/services/WidgetService'
@@ -945,7 +945,7 @@ export function Settings({ onNavigateToTab }: { onNavigateToTab?: (tab: string) 
 
 // Phase 18: App Lock Settings Component
 function AppLockSettings() {
-  const { isEnabled, isBiometricAvailable, isBiometricEnabled, enableLock, disableLock, enableBiometric, disableBiometric } = useAppLock()
+  const { isEnabled, isBiometricAvailable, isBiometricEnabled, lockDelay, setLockDelay, enableLock, disableLock, enableBiometric, disableBiometric } = useAppLock()
   const [showSetPin, setShowSetPin] = useState(false)
   const [newPin, setNewPin] = useState('')
   const [biometricLoading, setBiometricLoading] = useState(false)
@@ -978,7 +978,11 @@ function AppLockSettings() {
           </div>
           <div>
             <p className="text-sm font-semibold text-foreground">PIN Lock</p>
-            <p className="text-xs text-muted-foreground">{isEnabled ? 'Active — locks after 5 min' : 'Protect your data'}</p>
+            <p className="text-xs text-muted-foreground">
+              {isEnabled
+                ? `Active — locks ${(LOCK_DELAY_OPTIONS.find(o => o.id === lockDelay)?.label ?? 'immediately').toLowerCase()}`
+                : 'Protect your data'}
+            </p>
           </div>
         </div>
         <button
@@ -1020,6 +1024,39 @@ function AppLockSettings() {
             </button>
           </div>
         </motion.div>
+      )}
+
+      {/* Auto-lock delay */}
+      {isEnabled && (
+        <div className="bg-secondary/30 border border-border rounded-xl p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
+              <Clock className="w-5 h-5 text-amber-500" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Auto-lock</p>
+              <p className="text-xs text-muted-foreground">When to require your PIN again</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {LOCK_DELAY_OPTIONS.map(opt => {
+              const active = lockDelay === opt.id
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => setLockDelay(opt.id)}
+                  className={`h-10 rounded-lg text-xs font-semibold transition-colors border ${
+                    active
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background text-foreground border-border/50 hover:border-border'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       )}
 
       {/* Fingerprint / Biometric */}

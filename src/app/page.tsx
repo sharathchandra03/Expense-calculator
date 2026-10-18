@@ -35,6 +35,7 @@ const CSVImport = dynamic(() => import('@/components/modules/csv-import').then(m
 const AboutApp = dynamic(() => import('@/components/modules/about-app').then(m => ({ default: m.AboutApp })), { ssr: false })
 const HelpSupport = dynamic(() => import('@/components/modules/help-support').then(m => ({ default: m.HelpSupport })), { ssr: false })
 const FinancialHealthDetail = dynamic(() => import('@/components/modules/financial-health').then(m => ({ default: m.FinancialHealthDetail })), { ssr: false })
+const SupportAdmin = dynamic(() => import('@/components/modules/support-admin').then(m => ({ default: m.SupportAdmin })), { ssr: false })
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard')
@@ -136,13 +137,38 @@ export default function Home() {
 
   if (!dbReady) {
     return (
-      <div className="flex flex-1 items-center justify-center bg-background text-foreground">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="w-8 h-8 rounded-full border-4 border-t-[#6d5efc] border-r-transparent border-b-transparent border-l-transparent animate-spin" />
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-            Loading...
+      <div className="min-h-screen flex flex-1 items-center justify-center bg-background text-foreground">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.94 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+          className="flex flex-col items-center space-y-5"
+        >
+          <div className="relative">
+            {/* Soft brand glow */}
+            <div className="absolute inset-0 rounded-3xl bg-[#6d5efc]/25 blur-2xl animate-pulse" />
+            <motion.img
+              src="/app-assets/pennyflow-logo.png"
+              alt="PennyFlow"
+              className="relative w-16 h-16 rounded-3xl object-contain"
+              animate={{ y: [0, -6, 0] }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          </div>
+          {/* Progress track */}
+          <div className="w-28 h-1 rounded-full bg-secondary overflow-hidden">
+            <motion.div
+              className="h-full rounded-full bg-gradient-to-r from-[#6d5efc] to-[#a78bfa]"
+              initial={{ x: '-100%' }}
+              animate={{ x: ['-100%', '100%'] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ width: '60%' }}
+            />
+          </div>
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.2em]">
+            PennyFlow
           </p>
-        </div>
+        </motion.div>
       </div>
     )
   }
@@ -193,6 +219,8 @@ export default function Home() {
           return <AboutApp key="about" />
         case 'support':
           return <HelpSupport key="support" />
+        case 'supportadmin':
+          return <SupportAdmin key="supportadmin" />
         case 'health':
           return <FinancialHealthDetail key="health" onNavigateToTab={(tab) => handleTabChange(tab as any)} />
         default:
@@ -227,10 +255,10 @@ export default function Home() {
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
               className={cn("w-full", !isDashboard && "px-5 pt-6")}
             >
               {renderModule()}

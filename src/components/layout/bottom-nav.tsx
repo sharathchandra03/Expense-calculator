@@ -6,8 +6,11 @@ import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/schema'
+import { useAuth } from '@/providers/AuthProvider'
+import { isOperatorEmail } from '@/lib/admin-config'
+import { ShieldCheck } from 'lucide-react'
 
-export type TabType = 'dashboard' | 'ledger' | 'accounts' | 'analytics' | 'budgets' | 'bills' | 'subscriptions' | 'goals' | 'debtplanner' | 'categories' | 'receipts' | 'splits' | 'investments' | 'lending' | 'assets' | 'reports' | 'notifications' | 'csvimport' | 'settings' | 'about' | 'support' | 'health';
+export type TabType = 'dashboard' | 'ledger' | 'accounts' | 'analytics' | 'budgets' | 'bills' | 'subscriptions' | 'goals' | 'debtplanner' | 'categories' | 'receipts' | 'splits' | 'investments' | 'lending' | 'assets' | 'reports' | 'notifications' | 'csvimport' | 'settings' | 'about' | 'support' | 'health' | 'supportadmin';
 
 interface BottomNavProps {
   activeTab: TabType;
@@ -51,6 +54,8 @@ const DEFAULT_NAV_ITEMS: NavItem[] = [
 export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNavProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [navItems] = useState<NavItem[]>(DEFAULT_NAV_ITEMS)
+  const { user } = useAuth()
+  const isOperator = isOperatorEmail(user?.email)
 
   // Live unread notification count for the Profile + Notifications badges.
   const unreadCount = useLiveQuery(
@@ -80,13 +85,24 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
       <button
         key={tab.id}
         onClick={() => setActiveTab(tab.id)}
-        className="flex flex-col items-center justify-center gap-0.5 w-16 h-full"
+        className="relative flex flex-col items-center justify-center gap-0.5 w-16 h-full"
+        aria-current={isActive ? 'page' : undefined}
       >
-        <Icon
-          className={cn("h-[22px] w-[22px]", isActive ? "text-foreground" : "text-muted-foreground")}
-          strokeWidth={isActive ? 2.3 : 1.7}
-        />
-        <span className={cn("text-[10px]", isActive ? "font-semibold text-foreground" : "font-medium text-muted-foreground")}>
+        {/* Active indicator dot */}
+        {isActive && (
+          <motion.span
+            layoutId="nav-active-indicator"
+            transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+            className="absolute top-2 h-1 w-1 rounded-full bg-[#6d5efc]"
+          />
+        )}
+        <motion.div animate={{ y: isActive ? -1 : 0 }} transition={{ type: 'spring', stiffness: 400, damping: 22 }}>
+          <Icon
+            className={cn("h-[22px] w-[22px] transition-colors", isActive ? "text-foreground" : "text-muted-foreground")}
+            strokeWidth={isActive ? 2.3 : 1.7}
+          />
+        </motion.div>
+        <span className={cn("text-[10px] transition-colors", isActive ? "font-semibold text-foreground" : "font-medium text-muted-foreground")}>
           {tab.label}
         </span>
       </button>
@@ -101,13 +117,16 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
           {leftTabs.map(renderTab)}
 
           {/* Center FAB */}
-          <button
+          <motion.button
             onClick={onQuickAddClick}
-            className="flex h-[52px] w-[52px] -mt-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-fab"
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.92, rotate: 90 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+            className="flex h-[52px] w-[52px] -mt-5 items-center justify-center rounded-full bg-gradient-to-br from-[#7c6ffd] to-[#5b3df5] text-white shadow-fab ring-4 ring-card"
             aria-label="Add transaction"
           >
             <Plus className="h-6 w-6" strokeWidth={2.5} />
-          </button>
+          </motion.button>
 
           {rightTabs.map(renderTab)}
 
@@ -242,6 +261,20 @@ export function BottomNav({ activeTab, setActiveTab, onQuickAddClick }: BottomNa
                   </button>
                 )
               })}
+
+              {/* Section: Operator (only visible to operator accounts) */}
+              {isOperator && (
+                <>
+                  <p className="px-3 pt-4 pb-1.5 text-[10px] font-bold text-foreground/70 uppercase tracking-wider">Operator</p>
+                  <button
+                    onClick={() => handleNavClick('supportadmin')}
+                    className={cn('w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] transition-colors', activeTab === 'supportadmin' ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground')}
+                  >
+                    <ShieldCheck className="h-4 w-4 flex-shrink-0" strokeWidth={1.8} />
+                    <span>Support Inbox</span>
+                  </button>
+                </>
+              )}
             </nav>
 
             {/* Quick add in sidebar */}

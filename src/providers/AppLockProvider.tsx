@@ -9,12 +9,39 @@ const LOCK_PIN_KEY = 'pennyflow-lock-pin-hash'
 const LOCK_ENABLED_KEY = 'pennyflow-lock-enabled'
 const LOCK_BIOMETRIC_KEY = 'pennyflow-lock-biometric'
 const LAST_ACTIVITY_KEY = 'pennyflow-last-activity'
+const LOCK_DELAY_KEY = 'pennyflow-lock-delay'
+
+// Auto-lock delay options (value in milliseconds). "immediate" locks as soon as
+// the app is backgrounded or idle; the others wait for the given idle window.
+export type LockDelayId = 'immediate' | '1min' | '5min' | '15min'
+
+export const LOCK_DELAY_OPTIONS: { id: LockDelayId; label: string; ms: number }[] = [
+  { id: 'immediate', label: 'Immediately', ms: 0 },
+  { id: '1min', label: 'After 1 minute', ms: 1 * 60 * 1000 },
+  { id: '5min', label: 'After 5 minutes', ms: 5 * 60 * 1000 },
+  { id: '15min', label: 'After 15 minutes', ms: 15 * 60 * 1000 },
+]
+
+const DEFAULT_LOCK_DELAY: LockDelayId = 'immediate'
+
+function getLockDelayId(): LockDelayId {
+  if (typeof window === 'undefined') return DEFAULT_LOCK_DELAY
+  const stored = localStorage.getItem(LOCK_DELAY_KEY) as LockDelayId | null
+  if (stored && LOCK_DELAY_OPTIONS.some(o => o.id === stored)) return stored
+  return DEFAULT_LOCK_DELAY
+}
+
+function lockDelayMs(id: LockDelayId): number {
+  return LOCK_DELAY_OPTIONS.find(o => o.id === id)?.ms ?? 0
+}
 
 interface AppLockContextType {
   isLocked: boolean
   isEnabled: boolean
   isBiometricAvailable: boolean
   isBiometricEnabled: boolean
+  lockDelay: LockDelayId
+  setLockDelay: (id: LockDelayId) => void
   enableLock: (pin: string) => void
   disableLock: () => void
   enableBiometric: () => Promise<boolean>
@@ -27,6 +54,8 @@ const AppLockContext = createContext<AppLockContextType>({
   isEnabled: false,
   isBiometricAvailable: false,
   isBiometricEnabled: false,
+  lockDelay: DEFAULT_LOCK_DELAY,
+  setLockDelay: () => {},
   enableLock: () => {},
   disableLock: () => {},
   enableBiometric: async () => false,
@@ -103,6 +132,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
   const [pinInput, setPinInput] = useState('')
   const [error, setError] = useState('')
   const [biometricAttempting, setBiometricAttempting] = useState(false)
+  const [lockDelay, setLockDelayState] = useState<LockDelayId>(DEFAULT_LOCK_DELAY)
   const activityTimer = useRef<NodeJS.Timeout | null>(null)
 
   // Initialize lock state
@@ -113,17 +143,48 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     const biometric = localStorage.getItem(LOCK_BIOMETRIC_KEY) === 'true'
     setIsEnabled(enabled)
     setIsBiometricEnabled(biometric)
+    setLockDelayState(getLockDelayId())
 
     // Check biometric availability
     checkBiometricAvailability().then(setIsBiometricAvailable)
 
+    // Security: always lock on a fresh app launch / page load when the lock
+    // is enabled. A relaunch should always require authentication regardless of
+    // how recently the user was active (the idle window only applies while the
+    // app stays open in the foreground).
     if (enabled) {
-      const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY)
-      const timeout = 5 * 60 * 1000 // 5 minutes
-      if (!lastActivity || Date.now() - parseInt(lastActivity) > timeout) {
-        setIsLocked(true)
+      setIsLocked(true)
+    }
+  }, [])
+
+  // Re-lock when the app returns from the background (tab/PWA becomes visible
+  // again) after having been hidden. This covers closing and reopening the app
+  // on mobile, where the page is not fully reloaded.
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+
+    let hiddenAt: number | null = null
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now()
+      } else if (document.visibilityState === 'visible') {
+        const enabled = localStorage.getItem(LOCK_ENABLED_KEY) === 'true'
+        if (!enabled || hiddenAt === null) { hiddenAt = null; return }
+
+        const delayMs = lockDelayMs(getLockDelayId())
+        const awayFor = Date.now() - hiddenAt
+        // "Immediately" (delayMs === 0) re-locks the moment the app returns.
+        // Otherwise re-lock only if it was backgrounded past the idle window.
+        if (awayFor >= delayMs) {
+          setIsLocked(true)
+        }
+        hiddenAt = null
       }
     }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [])
 
   // Auto-attempt biometric unlock when lock screen shows
@@ -151,9 +212,15 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     setBiometricAttempting(false)
   }
 
-  // Track activity for auto-lock
+  // Track activity for auto-lock while the app stays open in the foreground.
   useEffect(() => {
     if (!isEnabled || isLocked) return
+
+    // For the foreground idle timer, "Immediately" has no meaningful idle window
+    // (locking mid-use would be hostile), so treat it as a 1-minute idle timeout.
+    // "Immediately" still applies fully to relaunch and returning from background.
+    const configuredMs = lockDelayMs(lockDelay)
+    const timeout = configuredMs > 0 ? configuredMs : 60 * 1000
 
     const updateActivity = () => {
       localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString())
@@ -161,7 +228,6 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
 
     const checkTimeout = () => {
       const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY)
-      const timeout = 5 * 60 * 1000
       if (lastActivity && Date.now() - parseInt(lastActivity) > timeout) {
         setIsLocked(true)
       }
@@ -170,13 +236,13 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     updateActivity()
     const events = ['mousedown', 'touchstart', 'keydown', 'scroll']
     events.forEach(event => document.addEventListener(event, updateActivity, { passive: true }))
-    activityTimer.current = setInterval(checkTimeout, 30000)
+    activityTimer.current = setInterval(checkTimeout, 15000)
 
     return () => {
       events.forEach(event => document.removeEventListener(event, updateActivity))
       if (activityTimer.current) clearInterval(activityTimer.current)
     }
-  }, [isEnabled, isLocked])
+  }, [isEnabled, isLocked, lockDelay])
 
   const enableLock = useCallback((pin: string) => {
     if (pin.length !== 4 || !/^\d{4}$/.test(pin)) return
@@ -214,6 +280,11 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     setIsBiometricEnabled(false)
   }, [])
 
+  const setLockDelay = useCallback((id: LockDelayId) => {
+    localStorage.setItem(LOCK_DELAY_KEY, id)
+    setLockDelayState(id)
+  }, [])
+
   const changePIN = useCallback((oldPin: string, newPin: string): boolean => {
     const stored = localStorage.getItem(LOCK_PIN_KEY)
     if (!stored || !verifyPIN(oldPin, stored)) return false
@@ -243,7 +314,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AppLockContext.Provider value={{ isLocked, isEnabled, isBiometricAvailable, isBiometricEnabled, enableLock, disableLock, enableBiometric, disableBiometric, changePIN }}>
+    <AppLockContext.Provider value={{ isLocked, isEnabled, isBiometricAvailable, isBiometricEnabled, lockDelay, setLockDelay, enableLock, disableLock, enableBiometric, disableBiometric, changePIN }}>
       {children}
 
       {/* Lock Screen */}

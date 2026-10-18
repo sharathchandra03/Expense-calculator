@@ -18,9 +18,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const baseStyles = "inline-flex items-center justify-center whitespace-nowrap text-sm font-medium ring-offset-background transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-40 active:scale-[0.97]"
     
     const variants = {
-      default: "bg-foreground text-background hover:opacity-90 shadow-md",
-      destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-sm",
-      outline: "border border-border/80 bg-transparent hover:bg-muted text-foreground",
+      default: "bg-foreground text-background hover:opacity-90 shadow-card hover:shadow-hover hover:-translate-y-px",
+      destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-card",
+      outline: "border border-border/80 bg-transparent hover:bg-muted hover:border-border text-foreground",
       secondary: "bg-secondary text-secondary-foreground hover:opacity-90 border border-border/20",
       ghost: "hover:bg-muted text-foreground",
       link: "text-primary underline-offset-4 hover:underline"

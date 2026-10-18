@@ -4,15 +4,19 @@ import { cn } from "@/lib/utils"
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   outerClassName?: string;
   noBezel?: boolean;
+  /** Adds a subtle hover-lift + elevated shadow. Use for clickable cards. */
+  interactive?: boolean;
 }
 
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
-  ({ className, outerClassName, noBezel = false, children, ...props }, ref) => {
+  ({ className, outerClassName, noBezel = false, interactive = false, children, ...props }, ref) => {
     return (
       <div
         ref={ref}
         className={cn(
-          "rounded-2xl bg-card text-card-foreground border border-border shadow-sm overflow-hidden",
+          "rounded-2xl bg-card text-card-foreground border border-border shadow-card overflow-hidden",
+          "transition-[box-shadow,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+          interactive && "cursor-pointer hover:shadow-hover hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.995]",
           className
         )}
         {...props}
