@@ -6,6 +6,7 @@ import { db } from '@/db/schema'
 import { formatCurrency, cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Image as ImageIcon, X, Download, Calendar, Tag, Search } from 'lucide-react'
+import { PageHeader } from '@/components/ui/page-header'
 
 /**
  * Receipt Gallery — All uploaded transaction photos in one place
@@ -41,11 +42,7 @@ export function ReceiptGallery() {
 
   return (
     <div className="flex flex-col space-y-5 pb-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Receipt Gallery</h1>
-        <p className="text-xs text-muted-foreground">All your transaction photos in one place</p>
-      </div>
+      <PageHeader title="Receipt Gallery" subtitle="All your transaction photos in one place" />
 
       {/* Stats */}
       <div className="flex items-center gap-3">

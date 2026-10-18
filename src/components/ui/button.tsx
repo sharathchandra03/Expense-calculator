@@ -15,13 +15,13 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const Comp = asChild ? Slot : "button"
     
     // Custom premium styles matching our design system
-    const baseStyles = "inline-flex items-center justify-center whitespace-nowrap text-sm font-medium ring-offset-background transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-40 active:scale-[0.97]"
+    const baseStyles = "inline-flex items-center justify-center whitespace-nowrap text-sm font-bold ring-offset-background transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-40 active:scale-[0.97]"
     
     const variants = {
-      default: "bg-foreground text-background hover:opacity-90 shadow-card hover:shadow-hover hover:-translate-y-px",
+      default: "bg-gradient-to-br from-[#7c6ffd] to-[#5b3df5] text-white hover:opacity-95 shadow-fab hover:shadow-hover hover:-translate-y-px",
       destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-card",
-      outline: "border border-border/80 bg-transparent hover:bg-muted hover:border-border text-foreground",
-      secondary: "bg-secondary text-secondary-foreground hover:opacity-90 border border-border/20",
+      outline: "border border-border bg-transparent hover:bg-muted hover:border-primary/40 text-foreground",
+      secondary: "bg-secondary text-secondary-foreground hover:opacity-90 border border-border/40",
       ghost: "hover:bg-muted text-foreground",
       link: "text-primary underline-offset-4 hover:underline"
     }
@@ -40,7 +40,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         {...props}
       >
-        <span>{children}</span>
+        <span className="inline-flex items-center justify-center gap-2">{children}</span>
         {trailingIcon && (
           <span className="ml-2 w-5 h-5 rounded-full bg-current/10 flex items-center justify-center scale-95 transition-transform group-hover:translate-x-0.5">
             {trailingIcon}

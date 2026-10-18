@@ -23,7 +23,11 @@ export function NotificationsCenter() {
   const safeNotifications = Array.isArray(notifications) ? notifications : []
 
   const unreadCount = NotificationService.getUnreadCount(safeNotifications)
-  const grouped = NotificationService.groupByType(safeNotifications)
+  // Only unread notifications stay in the active list. Marking one read (or
+  // "Mark All Read") removes it from view instead of leaving it dimmed but
+  // still present, which read as "nothing happened".
+  const visibleNotifications = safeNotifications.filter(n => !n.read)
+  const grouped = NotificationService.groupByType(visibleNotifications)
 
   const handleMarkAsRead = async (id: string) => {
     const notif = safeNotifications.find(n => n.id === id)
@@ -62,6 +66,12 @@ export function NotificationsCenter() {
     }
   }
 
+  // Titles are stored with a leading emoji (e.g. "⚠️ Budget Alert"), and the
+  // list already shows an emoji icon next to the title — strip the one baked
+  // into the title so we don't render the same kind of glyph twice.
+  const stripLeadingEmoji = (title: string) =>
+    title.replace(/^[\p{Extended_Pictographic}\u200d\uFE0F\u20E3]+\s*/u, '').trim()
+
   return (
     <div className="flex flex-col space-y-5 pb-6">
       <div className="flex items-center justify-between">
@@ -82,7 +92,7 @@ export function NotificationsCenter() {
       </div>
 
       {/* Notification Groups */}
-      {safeNotifications.length > 0 ? (
+      {visibleNotifications.length > 0 ? (
         <div className="space-y-4">
           {Object.entries(grouped).map(([type, notifs]) => (
             <div key={type} className="space-y-2">
@@ -107,7 +117,7 @@ export function NotificationsCenter() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <span className="text-lg">{getNotificationIcon(notif.type)}</span>
-                            <p className="text-sm font-bold">{notif.title}</p>
+                            <p className="text-sm font-bold">{stripLeadingEmoji(notif.title)}</p>
                           </div>
                           <p className="text-xs text-muted-foreground mt-1">{notif.message}</p>
                           <p className="text-[10px] text-muted-foreground/60 mt-2">

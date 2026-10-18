@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/select'
 import { CategorySelect } from '@/components/ui/category-select'
 import { DatePicker } from '@/components/ui/date-picker'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/ui/page-header'
 import { formatCurrency } from '@/lib/utils'
 import { Plus, Edit2, Trash2, CheckCircle2, Calendar, Tag, AlertCircle, X, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -176,11 +177,7 @@ export function BillsManager() {
 
   return (
     <div className="flex flex-col space-y-5 pb-6">
-      {/* Module Title */}
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Bills & Obligations</h1>
-        <p className="text-xs text-muted-foreground">Manage recurring and one-time payments.</p>
-      </div>
+      <PageHeader title="Bills & Obligations" subtitle="Manage recurring and one-time payments." />
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-3">
@@ -297,18 +294,8 @@ export function BillsManager() {
             </div>
 
             <div className="flex gap-2 pt-2">
-              <button
-                onClick={handleSave}
-                className="flex-1 h-10 rounded-full bg-foreground text-background font-semibold text-xs uppercase tracking-wider hover:opacity-90 active:scale-[0.97] transition-all flex items-center justify-center gap-2"
-              >
-                Save Bill
-              </button>
-              <button
-                onClick={handleCancel}
-                className="flex-1 h-10 rounded-full border border-border/50 bg-transparent font-semibold text-xs uppercase tracking-wider hover:bg-secondary/50 active:scale-[0.97] transition-all"
-              >
-                Cancel
-              </button>
+              <Button onClick={handleSave} className="flex-1">Save Bill</Button>
+              <Button variant="outline" onClick={handleCancel} className="flex-1">Cancel</Button>
             </div>
           </motion.div>
         )}
@@ -407,15 +394,9 @@ export function BillsManager() {
 
       {/* Add Bill Button */}
       {!isAddingBill && (
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => setIsAddingBill(true)}
-          className="w-full h-11 rounded-full bg-foreground text-background font-bold text-sm uppercase tracking-wider hover:opacity-90 active:scale-[0.97] transition-all flex items-center justify-center gap-2 shadow-md"
-        >
-          <Plus className="w-4 h-4" />
-          Add New Bill
-        </motion.button>
+        <Button onClick={() => setIsAddingBill(true)} size="pill" className="w-full">
+          <Plus className="w-4 h-4" /> Add New Bill
+        </Button>
       )}
 
       <ConfirmDialog

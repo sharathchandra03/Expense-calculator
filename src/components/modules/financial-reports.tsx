@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { DatePicker } from '@/components/ui/date-picker'
+import { PageHeader } from '@/components/ui/page-header'
 import { formatCurrency } from '@/lib/utils'
 import { Download, Calendar, TrendingUp, BarChart3, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -57,10 +58,7 @@ export function FinancialReports() {
 
   return (
     <div className="flex flex-col space-y-5 pb-6">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Financial Reports</h1>
-        <p className="text-xs text-muted-foreground">Generate and analyze financial summaries.</p>
-      </div>
+      <PageHeader title="Financial Reports" subtitle="Generate and analyze financial summaries." />
 
       {/* Filters */}
       <div className="space-y-3">
@@ -88,30 +86,30 @@ export function FinancialReports() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-3">
-        <Card className="bg-gradient-to-br from-emerald-950/20 to-emerald-900/10 border-emerald-500/30">
+        <Card className="bg-emerald-500/10 border-emerald-500/30">
           <CardContent className="pt-4">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase">Income</p>
             <p className="text-lg font-bold text-emerald-500 mt-2">{formatCurrency(report.totalIncome)}</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-red-950/20 to-red-900/10 border-red-500/30">
+        <Card className="bg-red-500/10 border-red-500/30">
           <CardContent className="pt-4">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase">Expenses</p>
             <p className="text-lg font-bold text-red-500 mt-2">{formatCurrency(report.totalExpense)}</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-blue-950/20 to-blue-900/10 border-blue-500/30">
+        <Card className="bg-blue-500/10 border-blue-500/30">
           <CardContent className="pt-4">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase">Net Savings</p>
-            <p className={cn('text-lg font-bold mt-2', report.netSavings > 0 ? 'text-emerald-500' : 'text-red-500')}>
+            <p className={cn('text-lg font-bold mt-2', report.netSavings >= 0 ? 'text-emerald-500' : 'text-red-500')}>
               {formatCurrency(report.netSavings)}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-purple-950/20 to-purple-900/10 border-purple-500/30">
+        <Card className="bg-purple-500/10 border-purple-500/30">
           <CardContent className="pt-4">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase">Savings Rate</p>
             <p className="text-lg font-bold text-purple-500 mt-2">{report.savingsRate}%</p>

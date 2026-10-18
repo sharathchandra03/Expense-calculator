@@ -156,6 +156,134 @@ export class BudgetManagementService {
   }
 
   /**
+   * Resolve the list of categories a budget tracks.
+   * Multi-category budgets store them in `categories`; legacy budgets fall back
+   * to the single `category` field. Empty means "all categories".
+   */
+  static getBudgetCategories(budget: Budget): string[] {
+    if (Array.isArray(budget.categories) && budget.categories.length > 0) {
+      return budget.categories
+    }
+    return budget.category ? [budget.category] : []
+  }
+
+  /**
+   * Total expense spend for a budget within [start, end), summed across every
+   * category the budget tracks. If the budget tracks no specific categories it
+   * counts ALL expenses in the window (an overall budget).
+   */
+  static calculateBudgetSpend(
+    transactions: Transaction[],
+    budget: Budget,
+    startDate: string,
+    endDate: string
+  ): number {
+    const cats = this.getBudgetCategories(budget)
+    const start = new Date(startDate + 'T00:00:00')
+    const end = new Date(endDate + 'T00:00:00')
+    return transactions
+      .filter(tx => {
+        if (tx.type !== 'expense') return false
+        const txDate = new Date(tx.date + 'T00:00:00')
+        if (txDate < start || txDate >= end) return false
+        return cats.length === 0 || cats.includes(tx.category)
+      })
+      .reduce((sum, tx) => sum + tx.amount, 0)
+  }
+
+  /**
+   * Per-category breakdown for a multi-category budget's current period.
+   * Each entry carries the category's own limit (0 = no explicit limit) and
+   * how much has been spent so the Budget Analysis screen can render bars that
+   * fill as expenses land in those categories.
+   */
+  static getCategoryBreakdown(
+    budget: Budget,
+    transactions: Transaction[]
+  ): Array<{
+    category: string
+    limit: number
+    spent: number
+    remaining: number
+    percentUsed: number
+    status: 'under' | 'warning' | 'exceeded'
+  }> {
+    const { start, end } = this.getCurrentPeriod(budget)
+    const cats = this.getBudgetCategories(budget)
+    const limits = budget.categoryLimits || {}
+
+    return cats
+      .map(category => {
+        const spent = this.calculateCategorySpend(transactions, category, start, end)
+        const limit = limits[category] || 0
+        const remaining = limit > 0 ? limit - spent : 0
+        const percentUsed = limit > 0 ? Math.round((spent / limit) * 1000) / 10 : 0
+        let status: 'under' | 'warning' | 'exceeded' = 'under'
+        if (limit > 0) {
+          if (percentUsed >= 100) status = 'exceeded'
+          else if (percentUsed >= (budget.alertThreshold || 80)) status = 'warning'
+        }
+        return { category, limit, spent, remaining, percentUsed, status }
+      })
+      .sort((a, b) => b.spent - a.spent || a.category.localeCompare(b.category))
+  }
+
+  /**
+   * Status for a whole budget (overall limit vs total spend across its
+   * categories), evaluated against its current period window.
+   */
+  static getAggregateStatus(budget: Budget, transactions: Transaction[]): BudgetStatus {
+    const { start, end } = this.getCurrentPeriod(budget)
+    const spent = this.calculateBudgetSpend(transactions, budget, start, end)
+    return this.getBudgetStatus(budget, spent, end)
+  }
+
+  /**
+   * Human-readable label for the period a budget covers, e.g. "October 2026"
+   * for a monthly budget or "2026" for a yearly one.
+   */
+  static getPeriodLabel(budget: Budget): string {
+    const { start } = this.getCurrentPeriod(budget)
+    const d = new Date(start + 'T00:00:00')
+    if (budget.period === 'yearly') return String(d.getFullYear())
+    if (budget.period === 'weekly') {
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    }
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  }
+
+  /**
+   * Classify a budget's current period relative to today.
+   * - 'active'   : today falls inside the window
+   * - 'upcoming' : the window starts in the future
+   * - 'past'     : the window already ended (only possible for fixed-term)
+   */
+  static getTiming(budget: Budget): 'active' | 'upcoming' | 'past' {
+    const { start, end } = this.getCurrentPeriod(budget)
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+    const s = new Date(start + 'T00:00:00')
+    const e = new Date(end + 'T00:00:00')
+    if (now < s) return 'upcoming'
+    if (now >= e) return 'past'
+    return 'active'
+  }
+
+  /**
+   * Safe-to-spend per day for the remainder of the current period.
+   */
+  static getSafeToSpend(budget: Budget, transactions: Transaction[]): number {
+    const { start, end } = this.getCurrentPeriod(budget)
+    const spent = this.calculateBudgetSpend(transactions, budget, start, end)
+    const remaining = budget.limit - spent
+    if (remaining <= 0) return 0
+    const now = new Date()
+    const endDate = new Date(end + 'T00:00:00')
+    const daysLeft = Math.max(1, Math.ceil((endDate.getTime() - now.getTime()) / 86_400_000))
+    return remaining / daysLeft
+  }
+
+  /**
    * Check if any budget needs alert
    */
   static getBudgetAlerts(budgets: Budget[], transactions: Transaction[]): BudgetStatus[] {

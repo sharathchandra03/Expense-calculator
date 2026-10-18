@@ -7,6 +7,7 @@ import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import { FinancialHealthService, FinancialHealthResult, MetricResult, MetricStatus } from '@/services/FinancialHealthService'
 import { TrendingUp, TrendingDown, Minus, ChevronRight, Info, Sparkles, Shield, PieChart, Wallet, Target, CreditCard, Heart, BarChart3 } from 'lucide-react'
+import { PageHeader } from '@/components/ui/page-header'
 
 interface FinancialHealthProps {
   onNavigateToTab?: (tab: string) => void
@@ -40,11 +41,7 @@ export function FinancialHealthDetail({ onNavigateToTab }: FinancialHealthProps)
 
   return (
     <div className="flex flex-col space-y-5 pb-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Financial Health</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">Your comprehensive financial wellness index.</p>
-      </div>
+      <PageHeader title="Financial Health" subtitle="Your comprehensive financial wellness index." />
 
       {/* Score Hero */}
       <motion.div

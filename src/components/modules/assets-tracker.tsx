@@ -7,7 +7,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { formatCurrency } from '@/lib/utils'
+import { PageHeader } from '@/components/ui/page-header'
+import { formatCurrency, getCurrencySymbol } from '@/lib/utils'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { Plus, TrendingUp, Handshake, Shield, Sparkles, CheckCircle, ChevronRight, Calculator, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -216,11 +217,7 @@ export function AssetsTracker() {
 
   return (
     <div className="flex flex-col space-y-5 pb-6">
-      {/* Module Title */}
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Assets & Lending</h1>
-        <p className="text-xs text-muted-foreground">Manage your properties, investments, and loan ledger.</p>
-      </div>
+      <PageHeader title="Assets & Lending" subtitle="Manage your properties, investments, and loan ledger." />
 
       {/* Switch Sub-tabs */}
       <div className="flex p-1 bg-secondary rounded-2xl w-full max-w-xs mx-auto">
@@ -273,27 +270,27 @@ export function AssetsTracker() {
                     <LineChart data={getChartData()} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
                       <XAxis 
                         dataKey="date" 
-                        stroke="#888888" 
+                        stroke="var(--muted-foreground)" 
                         fontSize={9} 
                         tickLine={false} 
                         axisLine={false} 
                       />
                       <YAxis 
-                        stroke="#888888" 
+                        stroke="var(--muted-foreground)" 
                         fontSize={9} 
                         tickLine={false} 
                         axisLine={false} 
-                        tickFormatter={(value) => `$${value}`} 
+                        tickFormatter={(value) => `${getCurrencySymbol()}${value}`} 
                       />
                       <Tooltip
                         contentStyle={{
-                          background: 'rgba(15, 15, 17, 0.9)',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
+                          background: 'var(--card)',
+                          border: '1px solid var(--border)',
                           borderRadius: '12px',
                           fontSize: '11px',
-                          color: '#fff'
+                          color: 'var(--foreground)'
                         }}
-                        formatter={(value) => [`$${value}`, 'Valuation']}
+                        formatter={(value) => [formatCurrency(Number(value)), 'Valuation']}
                       />
                       <Line 
                         type="monotone" 

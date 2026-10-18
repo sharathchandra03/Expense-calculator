@@ -7,6 +7,7 @@ import { BottomNav, TabType } from '@/components/layout/bottom-nav'
 import { Dashboard } from '@/components/modules/dashboard'
 import { RecurringTransactionService } from '@/services/RecurringTransactionService'
 import { NotificationGenerator } from '@/services/NotificationGenerator'
+import { GoalService } from '@/services/GoalService'
 import { AnimatePresence, motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
@@ -28,21 +29,31 @@ const CustomCategories = dynamic(() => import('@/components/modules/custom-categ
 const AccountManager = dynamic(() => import('@/components/modules/account-manager').then(m => ({ default: m.AccountManager })), { ssr: false })
 const Analytics = dynamic(() => import('@/components/modules/analytics').then(m => ({ default: m.Analytics })), { ssr: false })
 const SplitExpenses = dynamic(() => import('@/components/modules/split-expenses').then(m => ({ default: m.SplitExpenses })), { ssr: false })
+const SharedWallets = dynamic(() => import('@/components/modules/shared-wallets').then(m => ({ default: m.SharedWallets })), { ssr: false })
 const DebtPlanner = dynamic(() => import('@/components/modules/debt-planner').then(m => ({ default: m.DebtPlanner })), { ssr: false })
 const ReceiptGallery = dynamic(() => import('@/components/modules/receipt-gallery').then(m => ({ default: m.ReceiptGallery })), { ssr: false })
 const SubscriptionTracker = dynamic(() => import('@/components/modules/subscriptions').then(m => ({ default: m.SubscriptionTracker })), { ssr: false })
 const CSVImport = dynamic(() => import('@/components/modules/csv-import').then(m => ({ default: m.CSVImport })), { ssr: false })
 const AboutApp = dynamic(() => import('@/components/modules/about-app').then(m => ({ default: m.AboutApp })), { ssr: false })
 const HelpSupport = dynamic(() => import('@/components/modules/help-support').then(m => ({ default: m.HelpSupport })), { ssr: false })
+const FAQ = dynamic(() => import('@/components/modules/faq').then(m => ({ default: m.FAQ })), { ssr: false })
 const FinancialHealthDetail = dynamic(() => import('@/components/modules/financial-health').then(m => ({ default: m.FinancialHealthDetail })), { ssr: false })
 const SupportAdmin = dynamic(() => import('@/components/modules/support-admin').then(m => ({ default: m.SupportAdmin })), { ssr: false })
+const MorePage = dynamic(() => import('@/components/modules/more-page').then(m => ({ default: m.MorePage })), { ssr: false })
+const BackupSheet = dynamic(() => import('@/components/modules/backup-sheet').then(m => ({ default: m.BackupSheet })), { ssr: false })
+const DayView = dynamic(() => import('@/components/modules/day-view').then(m => ({ default: m.DayView })), { ssr: false })
+const CalendarViewPage = dynamic(() => import('@/components/modules/calendar-view').then(m => ({ default: m.CalendarViewPage })), { ssr: false })
+const CustomView = dynamic(() => import('@/components/modules/custom-view').then(m => ({ default: m.CustomView })), { ssr: false })
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard')
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [isBackupOpen, setIsBackupOpen] = useState(false)
+  const [backupVersion, setBackupVersion] = useState(0)
   const [isFirstTime, setIsFirstTime] = useState(true)
   const [dbReady, setDbReady] = useState(false)
+  const scrollRef = React.useRef<HTMLDivElement>(null)
 
   // Browser history management for mobile back button
   const handleTabChange = (tab: TabType) => {
@@ -52,6 +63,13 @@ export default function Home() {
       window.history.pushState({ tab }, '', `?tab=${tab}`)
     }
   }
+
+  // Reset the scroll position to the top whenever the active tab changes, so a
+  // new screen always opens from its header instead of inheriting the previous
+  // screen's scroll offset (e.g. opening About App or FAQ from the bottom of Settings).
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' })
+  }, [activeTab])
 
   // Handle browser back button (popstate)
   useEffect(() => {
@@ -86,7 +104,13 @@ export default function Home() {
         RecurringTransactionService.processRecurrences()
           .catch(() => {})
           .finally(() => {
-            NotificationGenerator.generateAll().catch(() => {})
+            // Run goal auto-save (monthly, idempotent) then regenerate alerts so
+            // any auto-save / goal progress is reflected in notifications.
+            GoalService.runAutoSave()
+              .catch(() => {})
+              .finally(() => {
+                NotificationGenerator.generateAll().catch(() => {})
+              })
           })
       } catch {
         setDbReady(true) // continue anyway
@@ -201,6 +225,8 @@ export default function Home() {
           return <ReceiptGallery key="receipts" />
         case 'splits':
           return <SplitExpenses key="splits" />
+        case 'sharedwallets':
+          return <SharedWallets key="sharedwallets" />
         case 'investments':
           return <InvestmentTracker key="investments" />
         case 'lending':
@@ -218,11 +244,21 @@ export default function Home() {
         case 'about':
           return <AboutApp key="about" />
         case 'support':
-          return <HelpSupport key="support" />
+          return <HelpSupport key="support" onNavigateToTab={(tab) => handleTabChange(tab as any)} />
+        case 'faq':
+          return <FAQ key="faq" onNavigateToTab={(tab) => handleTabChange(tab as any)} />
         case 'supportadmin':
           return <SupportAdmin key="supportadmin" />
         case 'health':
           return <FinancialHealthDetail key="health" onNavigateToTab={(tab) => handleTabChange(tab as any)} />
+        case 'more':
+          return <MorePage key="more" onNavigateToTab={(tab) => handleTabChange(tab)} onBackupClick={() => setIsBackupOpen(true)} backupVersion={backupVersion} />
+        case 'dayview':
+          return <DayView key="dayview" onNavigateToTab={(tab) => handleTabChange(tab)} onQuickAddClick={() => setIsQuickAddOpen(true)} />
+        case 'calendarview':
+          return <CalendarViewPage key="calendarview" onNavigateToTab={(tab) => handleTabChange(tab)} />
+        case 'customview':
+          return <CustomView key="customview" onNavigateToTab={(tab) => handleTabChange(tab)} />
         default:
           return <Dashboard key="dashboard" onNavigateToTab={(tab) => handleTabChange(tab)} />
       }
@@ -251,7 +287,7 @@ export default function Home() {
       <div className="w-full h-[100dvh] md:h-[860px] md:max-w-[400px] md:rounded-[2.5rem] bg-background text-foreground md:shadow-elevated overflow-hidden relative flex flex-col">
 
         {/* Scrollable content area */}
-        <div className="flex-1 w-full overflow-y-auto pb-28 bg-background">
+        <div ref={scrollRef} className="flex-1 w-full overflow-y-auto pb-28 bg-background">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -277,12 +313,20 @@ export default function Home() {
         <QuickAddModal
           isOpen={isQuickAddOpen}
           onClose={() => setIsQuickAddOpen(false)}
+          onNavigateToTab={(tab) => { setIsQuickAddOpen(false); handleTabChange(tab as TabType) }}
         />
 
         {/* Global Search Dialog */}
         <GlobalSearch
           isOpen={isSearchOpen}
           onClose={() => setIsSearchOpen(false)}
+        />
+
+        {/* Backup bottom sheet (full-frame overlay) */}
+        <BackupSheet
+          isOpen={isBackupOpen}
+          onClose={() => setIsBackupOpen(false)}
+          onBackupComplete={() => setBackupVersion(v => v + 1)}
         />
 
         {/* Onboarding Tutorial */}

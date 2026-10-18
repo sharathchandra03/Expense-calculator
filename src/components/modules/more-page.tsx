@@ -1,0 +1,426 @@
+'use client'
+
+import React, { useEffect, useState } from 'react'
+import { motion } from 'framer-motion'
+import {
+  Clock, Calendar, Wallet, Tag, RefreshCw, Crown, ChevronRight,
+  BarChart3, LayoutDashboard, FileBarChart, Settings as SettingsIcon,
+  HelpCircle, Bell, ShieldCheck, Pencil, AlertTriangle,
+  Users, CreditCard, Camera, TrendingUp, Landmark, Upload, HeartHandshake, Target, TrendingDown,
+  Megaphone, Star, MessageSquare, Info, LogOut, CalendarDays, SlidersHorizontal, Rows3,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { db, getProfile } from '@/db/schema'
+import { useAuth } from '@/providers/AuthProvider'
+import { isOperatorEmail } from '@/lib/admin-config'
+import type { TabType } from '@/components/layout/bottom-nav'
+import { getLastBackup, type LastBackupInfo } from '@/services/DataExportService'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useToast } from '@/components/ui/toast-notification'
+
+// Shareable app details used by "Invite a friend" and "Rate app".
+const APP_NAME = 'PennyFlow'
+const APP_URL = typeof window !== 'undefined' ? window.location.origin : 'https://pennyflow.app'
+const INVITE_MESSAGE = `Check out ${APP_NAME} — a private, offline-first personal finance tracker. ${APP_URL}`
+
+interface MorePageProps {
+  onNavigateToTab: (tab: TabType) => void
+  /** Opens the backup bottom sheet (owned by the app shell so it overlays the full frame). */
+  onBackupClick: () => void
+  /** Bumped by the shell after a backup completes so the card refreshes its timestamp. */
+  backupVersion?: number
+}
+
+interface GridItem {
+  id: TabType
+  label: string
+  icon: React.ElementType
+  color: string
+  accent?: boolean
+}
+
+// Primary feature grid (2 columns) — mirrors the reference "Transactions / Scheduled" style.
+const FEATURE_GRID: GridItem[] = [
+  { id: 'ledger', label: 'Transactions', icon: Clock, color: 'text-blue-400' },
+  { id: 'bills', label: 'Scheduled', icon: Calendar, color: 'text-teal-400' },
+  { id: 'budgets', label: 'Budgets', icon: Wallet, color: 'text-pink-400' },
+  { id: 'categories', label: 'Categories', icon: Tag, color: 'text-emerald-400' },
+  { id: 'subscriptions', label: 'Subscriptions', icon: RefreshCw, color: 'text-sky-400' },
+  { id: 'goals', label: 'Goals', icon: Target, color: 'text-amber-400' },
+]
+
+// "Insights" row (3 columns) — icon stacked above label.
+const VIEW_ITEMS: GridItem[] = [
+  { id: 'dashboard', label: 'Home', icon: LayoutDashboard, color: 'text-foreground' },
+  { id: 'analytics', label: 'Analysis', icon: BarChart3, color: 'text-foreground' },
+  { id: 'reports', label: 'Reports', icon: FileBarChart, color: 'text-foreground' },
+]
+
+// Transaction "Views" row (3 columns) — Day / Calendar / Custom views of transactions.
+const TRANSACTION_VIEWS: GridItem[] = [
+  { id: 'dayview', label: 'Day', icon: Rows3, color: 'text-foreground' },
+  { id: 'calendarview', label: 'Calendar', icon: CalendarDays, color: 'text-foreground' },
+  { id: 'customview', label: 'Custom', icon: SlidersHorizontal, color: 'text-foreground' },
+]
+
+// Secondary feature grid — the rest of the modules, grouped under "Manage".
+const MANAGE_GRID: GridItem[] = [
+  { id: 'accounts', label: 'Accounts', icon: CreditCard, color: 'text-indigo-400' },
+  { id: 'investments', label: 'Investments', icon: TrendingUp, color: 'text-green-400' },
+  { id: 'lending', label: 'Lending', icon: HeartHandshake, color: 'text-rose-400' },
+  { id: 'assets', label: 'Assets', icon: Landmark, color: 'text-cyan-400' },
+  { id: 'splits', label: 'Split Expenses', icon: Users, color: 'text-orange-400' },
+  { id: 'sharedwallets', label: 'Shared Wallets', icon: Wallet, color: 'text-teal-400' },
+  { id: 'receipts', label: 'Receipts', icon: Camera, color: 'text-fuchsia-400' },
+  { id: 'debtplanner', label: 'Debt Planner', icon: TrendingDown, color: 'text-red-400' },
+  { id: 'csvimport', label: 'Import / Export', icon: Upload, color: 'text-violet-400' },
+]
+
+export function MorePage({ onNavigateToTab, onBackupClick, backupVersion }: MorePageProps) {
+  const { user, signOut } = useAuth()
+  const { showToast } = useToast()
+  const isOperator = isOperatorEmail(user?.email)
+  const [profileName, setProfileName] = useState<string>('')
+  const [profileAvatar, setProfileAvatar] = useState<string | undefined>(undefined)
+  const [lastBackup, setLastBackup] = useState<LastBackupInfo | null>(() => getLastBackup())
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
+  const firstBackupSync = React.useRef(true)
+
+  // Invite a friend — use the native share sheet when available, else copy to clipboard.
+  const handleInvite = async () => {
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({ title: APP_NAME, text: INVITE_MESSAGE, url: APP_URL })
+        return
+      } catch {
+        // User dismissed the share sheet, or share failed — fall through to copy.
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(INVITE_MESSAGE)
+      showToast('Invite link copied to clipboard')
+    } catch {
+      showToast('Could not share right now')
+    }
+  }
+
+  // Rate app — open the app in a new tab (store link can be swapped in later).
+  const handleRateApp = () => {
+    window.open(APP_URL, '_blank', 'noopener,noreferrer')
+  }
+
+  const handleSignOut = async () => {
+    setShowSignOutConfirm(false)
+    await signOut()
+  }
+
+  const unreadCount = useLiveQuery(
+    async () => db.notifications.filter(n => !n.read).count(),
+    [],
+    0
+  ) ?? 0
+
+  // Resolve the display identity: local profile first, then auth user.
+  useEffect(() => {
+    let active = true
+    getProfile()
+      .then(p => {
+        if (!active) return
+        setProfileName(p?.name || user?.user_metadata?.full_name || '')
+        setProfileAvatar(p?.avatar || (user?.user_metadata?.avatar_url as string | undefined))
+      })
+      .catch(() => {
+        if (!active) return
+        setProfileName(user?.user_metadata?.full_name || '')
+        setProfileAvatar(user?.user_metadata?.avatar_url as string | undefined)
+      })
+    return () => { active = false }
+  }, [user])
+
+  // Refresh the last-backup timestamp after a backup completes (skip initial mount,
+  // which is already seeded by the lazy useState initializer above).
+  useEffect(() => {
+    if (firstBackupSync.current) {
+      firstBackupSync.current = false
+      return
+    }
+    setLastBackup(getLastBackup())
+  }, [backupVersion])
+
+  const formatBackup = (info: LastBackupInfo) => {
+    const when = new Date(info.at).toLocaleString('en-US', {
+      day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+    })
+    const where = info.destination === 'cloud' ? 'G-Drive backup' : 'Local backup'
+    return `Last backup: ${where} on ${when}`
+  }
+
+  const isSignedIn = !!user
+  const displayName = profileName || (isSignedIn ? 'Your account' : 'Guest User')
+  const subtitle = isSignedIn ? (user?.email ?? 'Signed in') : 'Sign in to back up'
+
+  return (
+    <div className="flex flex-col space-y-5 pb-6">
+      {/* ── Profile card ───────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-3xl bg-card border border-border/60 p-4 shadow-sm"
+      >
+        <div className="flex items-center gap-3">
+          {/* Avatar */}
+          <div className="relative h-14 w-14 flex-shrink-0 rounded-full overflow-hidden bg-secondary flex items-center justify-center">
+            {profileAvatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={profileAvatar} alt={displayName} className="h-full w-full object-cover" />
+            ) : (
+              <Users className="h-7 w-7 text-muted-foreground" strokeWidth={1.6} />
+            )}
+          </div>
+
+          {/* Name + action */}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h2 className="truncate text-[17px] font-bold text-foreground">{displayName}</h2>
+              <button
+                onClick={() => onNavigateToTab('settings')}
+                className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-secondary transition-colors"
+                aria-label="Edit profile"
+              >
+                <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            </div>
+            <button
+              onClick={() => onNavigateToTab('settings')}
+              className="truncate text-left text-[13px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {subtitle}
+            </button>
+          </div>
+
+          {/* Security / backup shield */}
+          <button
+            onClick={() => onNavigateToTab('settings')}
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-secondary hover:bg-accent transition-colors"
+            aria-label="Security & backup"
+          >
+            <ShieldCheck className="h-5 w-5 text-muted-foreground" />
+          </button>
+        </div>
+
+        {/* Backup banner — shows last backup time, or a warning if never backed up */}
+        <div className="my-3 h-px w-full bg-border/60" />
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            {!lastBackup && (
+              <AlertTriangle className="h-5 w-5 flex-shrink-0 text-amber-400" strokeWidth={1.8} />
+            )}
+            <p className="text-[13px] leading-snug text-muted-foreground">
+              {lastBackup ? formatBackup(lastBackup) : "Your data hasn't been backed up yet."}
+            </p>
+          </div>
+          <button
+            onClick={onBackupClick}
+            className="flex-shrink-0 text-[13px] font-semibold text-foreground hover:text-primary transition-colors"
+          >
+            Back up now
+          </button>
+        </div>
+      </motion.div>
+
+      {/* ── Feature grid (2 columns) ──────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.03 }}
+        className="grid grid-cols-2 gap-3"
+      >
+        {FEATURE_GRID.map((item) => (
+          <GridCard key={item.id} item={item} onClick={() => onNavigateToTab(item.id)} />
+        ))}
+      </motion.div>
+
+      {/* ── Transaction Views row (Day / Calendar / Custom) ───────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+      >
+        <p className="px-1 pb-2 text-[13px] font-semibold text-muted-foreground">Views</p>
+        <div className="grid grid-cols-3 gap-3">
+          {TRANSACTION_VIEWS.map((item) => {
+            const Icon = item.icon
+            return (
+              <button
+                key={item.id}
+                onClick={() => onNavigateToTab(item.id)}
+                className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-card border border-border/60 py-5 hover:bg-accent active:scale-[0.98] transition-all"
+              >
+                <Icon className="h-5 w-5 text-foreground" strokeWidth={1.8} />
+                <span className="text-[13px] font-medium text-foreground">{item.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </motion.div>
+
+      {/* ── Insights row (3 columns) ──────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.06 }}
+      >
+        <p className="px-1 pb-2 text-[13px] font-semibold text-muted-foreground">Insights</p>
+        <div className="grid grid-cols-3 gap-3">
+          {VIEW_ITEMS.map((item) => {
+            const Icon = item.icon
+            return (
+              <button
+                key={item.id}
+                onClick={() => onNavigateToTab(item.id)}
+                className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-card border border-border/60 py-5 hover:bg-accent active:scale-[0.98] transition-all"
+              >
+                <Icon className="h-5 w-5 text-foreground" strokeWidth={1.8} />
+                <span className="text-[13px] font-medium text-foreground">{item.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </motion.div>
+
+      {/* ── Highlight banner (adapted from the Pro upsell) ────────── */}
+      <motion.button
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.09 }}
+        onClick={() => onNavigateToTab('health')}
+        className="flex items-center gap-3 rounded-2xl border border-amber-400/40 bg-gradient-to-br from-amber-500/10 to-purple-500/5 p-4 text-left hover:border-amber-400/70 active:scale-[0.99] transition-all"
+      >
+        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-amber-500/15">
+          <Crown className="h-5 w-5 text-amber-400" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-bold text-foreground">See your financial health</p>
+          <p className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
+            Understand where your money goes with a full health score.
+          </p>
+        </div>
+        <ChevronRight className="h-5 w-5 flex-shrink-0 text-amber-400" />
+      </motion.button>
+
+      {/* ── Manage grid (rest of the modules) ─────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.12 }}
+      >
+        <p className="px-1 pb-2 text-[13px] font-semibold text-muted-foreground">Manage</p>
+        <div className="grid grid-cols-2 gap-3">
+          {MANAGE_GRID.map((item) => (
+            <GridCard key={item.id} item={item} onClick={() => onNavigateToTab(item.id)} />
+          ))}
+        </div>
+      </motion.div>
+
+      {/* ── More options list ─────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
+      >
+        <p className="px-1 pb-2 text-[13px] font-semibold text-muted-foreground">More options</p>
+        <div className="overflow-hidden rounded-2xl bg-card border border-border/60">
+          <ListRow icon={SettingsIcon} label="Settings" onClick={() => onNavigateToTab('settings')} />
+          <ListRow
+            icon={Bell}
+            label="Notifications"
+            badge={unreadCount > 0 ? (unreadCount > 9 ? '9+' : String(unreadCount)) : undefined}
+            onClick={() => onNavigateToTab('notifications')}
+          />
+          <ListRow icon={Megaphone} label="Invite a friend" onClick={handleInvite} />
+          <ListRow icon={Star} label="Rate app" onClick={handleRateApp} />
+          <ListRow icon={MessageSquare} label="Query / feedback" onClick={() => onNavigateToTab('support')} />
+          <ListRow icon={HelpCircle} label="FAQs" onClick={() => onNavigateToTab('support')} />
+          <ListRow
+            icon={Info}
+            label="About app"
+            onClick={() => onNavigateToTab('about')}
+            last={!isOperator && !user}
+          />
+          {isOperator && (
+            <ListRow
+              icon={ShieldCheck}
+              label="Support Inbox"
+              onClick={() => onNavigateToTab('supportadmin')}
+              last={!user}
+            />
+          )}
+          {user && (
+            <ListRow icon={LogOut} label="Sign out" onClick={() => setShowSignOutConfirm(true)} last />
+          )}
+        </div>
+      </motion.div>
+
+      {/* Sign out confirmation */}
+      <ConfirmDialog
+        isOpen={showSignOutConfirm}
+        title="Sign out?"
+        message="Your data will be backed up to the cloud, then cleared from this device. You can sign back in anytime to restore it."
+        confirmLabel="Sign out"
+        cancelLabel="Cancel"
+        variant="warning"
+        onConfirm={handleSignOut}
+        onCancel={() => setShowSignOutConfirm(false)}
+      />
+    </div>
+  )
+}
+
+/* ── Reusable pieces ─────────────────────────────────────────────── */
+
+function GridCard({ item, onClick }: { item: GridItem; onClick: () => void }) {
+  const Icon = item.icon
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-3 rounded-2xl bg-card border border-border/60 px-4 py-4 text-left hover:bg-accent active:scale-[0.98] transition-all"
+    >
+      <Icon className={cn('h-5 w-5 flex-shrink-0', item.color)} strokeWidth={1.9} />
+      <span className="truncate text-[14px] font-medium text-foreground">{item.label}</span>
+    </button>
+  )
+}
+
+function ListRow({
+  icon: Icon,
+  label,
+  onClick,
+  badge,
+  last,
+}: {
+  icon: React.ElementType
+  label: string
+  onClick: () => void
+  badge?: string
+  last?: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-accent active:bg-accent/70 transition-colors',
+        !last && 'border-b border-border/60'
+      )}
+    >
+      <Icon className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" strokeWidth={1.8} />
+      <span className="flex-1 text-[14px] font-medium text-foreground">{label}</span>
+      {badge && (
+        <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-destructive text-white text-[10px] font-bold flex items-center justify-center leading-none">
+          {badge}
+        </span>
+      )}
+      <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+    </button>
+  )
+}

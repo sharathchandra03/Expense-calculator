@@ -54,6 +54,15 @@ export interface Bill {
 }
 
 // Define goals structure
+export interface GoalContribution {
+  id: string;
+  date: string; // YYYY-MM-DD
+  amount: number; // positive = contribution, negative = withdrawal
+  accountId?: string; // account the money moved to/from (if linked)
+  transactionId?: string; // linked transaction, if real money moved
+  auto?: boolean; // true if created by the auto-save engine
+}
+
 export interface Goal {
   id: string;
   title: string;
@@ -65,18 +74,37 @@ export interface Goal {
   milestones?: Array<{ amount: number; date: string; completed: boolean }>; // NEW
   autoSave?: boolean; // NEW: Auto-save toward goal
   autoSaveAmount?: number; // NEW: Monthly auto-save amount
+  autoSaveDay?: number; // NEW: 1-28 day of month to run auto-save
+  lastAutoSaveMonth?: string; // NEW: 'YYYY-MM' of the last month auto-save ran (idempotency)
   fundingAccountId?: string; // NEW: when set, contributions/withdrawals move real money to/from this account
+  contributions?: GoalContribution[]; // NEW: full contribution history
+  status?: 'active' | 'achieved' | 'archived'; // NEW
+  createdAt?: string; // NEW
+}
+
+// Linked payment mode (debit card, UPI, etc.) attached to a bank account
+export type PaymentModeKind = 'debit_card' | 'upi' | 'cheque' | 'internet_banking';
+export interface PaymentMode {
+  id: string;
+  name: string;
+  kind: PaymentModeKind;
 }
 
 // Define accounts structure
 export interface Account {
   id: string;
   name: string;
-  type: 'cash' | 'bank' | 'card' | 'investment' | 'crypto'; // UPDATED
+  type: 'cash' | 'bank' | 'card' | 'investment' | 'crypto' | 'wallet'; // UPDATED
   balance: number;
   currency?: string; // NEW: Currency code (USD, INR, etc.)
   icon?: string; // NEW: Account icon/emoji
   balanceHistory?: Array<{ date: string; balance: number }>; // NEW: Historical balances
+  // NEW: Credit card fields
+  creditLimit?: number; // total credit limit (for type === 'card')
+  billingCycleDay?: number; // 1-31: billing cycle start day of month
+  paymentDueDay?: number; // 1-31: payment due day of month
+  // NEW: Linked payment modes (for bank accounts)
+  paymentModes?: PaymentMode[];
 }
 
 // Define system logs structure (chronological timeline)
@@ -100,6 +128,14 @@ export interface Budget {
   endDate?: string;
   alertThreshold: number; // % of limit before alert (e.g., 80)
   isActive: boolean;
+  // NEW (v11): multi-category budgets.
+  // `categories` lists every category included in this budget. `categoryLimits`
+  // optionally caps individual categories (category name -> limit). Any amount
+  // not assigned to a specific category is tracked against the overall `limit`.
+  // Legacy single-category budgets leave these undefined and keep using
+  // `category` + `limit`.
+  categories?: string[];
+  categoryLimits?: Record<string, number>;
 }
 
 // NEW: Custom Category
@@ -203,33 +239,81 @@ export interface Subscription {
 }
 
 // Phase 2.9: Shared Wallets
+// A shared wallet is a group (trip, flatmates, household, ...) where members
+// log shared expenses, each split across some or all members. The app tracks
+// how much each member paid vs. owes, and computes who should pay whom back.
+export interface SharedWalletMember {
+  id: string;
+  name: string;
+  role: 'owner' | 'editor' | 'viewer';
+  /** Net balance for this member: positive = is owed money, negative = owes. */
+  balance: number;
+}
+
+export interface SharedWalletExpenseShare {
+  memberId: string;
+  /** Amount of this expense assigned to this member. */
+  amount: number;
+  /** Whether this member has settled their share with the payer. */
+  settled: boolean;
+}
+
+export interface SharedWalletExpense {
+  id: string;
+  date: string; // YYYY-MM-DD
+  description: string;
+  amount: number;
+  /** Member id of who paid. (Legacy records may have stored a name here.) */
+  paidBy: string;
+  type: 'expense' | 'income';
+  category?: string;
+  notes?: string;
+  splitType?: 'equal' | 'custom';
+  /** Per-member split of this expense. */
+  shares?: SharedWalletExpenseShare[];
+  createdAt?: string;
+}
+
 export interface SharedWallet {
   id: string;
   name: string;
   inviteCode: string;
-  members: Array<{
-    name: string;
-    role: 'owner' | 'editor' | 'viewer';
-    balance: number;
-  }>;
-  transactions: Array<{
-    id: string;
-    date: string;
-    description: string;
-    amount: number;
-    paidBy: string;
-    type: 'expense' | 'income';
-  }>;
+  currency?: string; // NEW: wallet currency (defaults to app currency)
+  description?: string; // NEW
+  members: SharedWalletMember[];
+  transactions: SharedWalletExpense[];
   createdAt: string;
+  updatedAt?: string; // NEW
+  archived?: boolean; // NEW
 }
 
 // Debt record for Debt Planner
+export type DebtKind = 'credit_card' | 'personal_loan' | 'home_loan' | 'auto_loan' | 'student_loan' | 'other';
+
+export interface DebtPayment {
+  id: string;
+  date: string; // YYYY-MM-DD
+  amount: number; // total paid this time
+  principal: number; // portion applied to balance
+  interest: number; // portion that was interest
+  accountId?: string; // account the money came from (if linked)
+  transactionId?: string; // linked transaction, if real money moved
+  note?: string;
+}
+
 export interface DebtRecord {
   id: string;
   name: string;
-  balance: number;
-  interestRate: number;
+  kind?: DebtKind; // NEW: type of debt (for icon + grouping)
+  balance: number; // current outstanding balance
+  originalBalance?: number; // NEW: starting balance (for progress %)
+  interestRate: number; // annual %
   minimumPayment: number;
+  dueDay?: number; // NEW: 1-31 day of month the payment is due
+  accountId?: string; // NEW: account payments are drawn from by default
+  lendingId?: string; // NEW: links back to a Lending 'borrowed' record if imported
+  payments?: DebtPayment[]; // NEW: full payment history
+  status?: 'active' | 'paid'; // NEW
   createdAt: string;
 }
 
@@ -464,6 +548,167 @@ class PennyFlowDatabase extends Dexie {
       debts: 'id, name, createdAt',
       userProfile: 'id',
       supportTickets: 'id, category, status, priority, createdAt, syncStatus',
+    });
+
+    // Version 10 — enrich goals & debts (new optional fields + status index).
+    // All new fields are optional and additive; the upgrade backfills defaults
+    // so existing records work with the completed Goals / Debt Planner logic.
+    this.version(10).stores({
+      transactions: 'id, date, type, category, accountId',
+      lending: 'id, contactName, type, status, createdAt',
+      assets: 'id, name, type',
+      bills: 'id, title, dueDate, isPaid',
+      goals: 'id, title, targetDate, status',
+      accounts: 'id, name, type',
+      systemLogs: 'id, timestamp, type',
+      budgets: 'id, category, period',
+      customCategories: 'id, name, type',
+      tags: 'id, name',
+      investments: 'id, name, symbol, accountId',
+      notifications: 'id, type, timestamp',
+      financialBriefs: 'id, period, startDate',
+      templates: 'id, name, category, type',
+      splits: 'id, transactionId, createdAt',
+      subscriptions: 'id, name, cycle, isActive',
+      sharedWallets: 'id, name, inviteCode',
+      debts: 'id, name, status, createdAt',
+      userProfile: 'id',
+      supportTickets: 'id, category, status, priority, createdAt, syncStatus',
+    }).upgrade(async (tx) => {
+      // Backfill goals: status, createdAt, contributions
+      await tx.table('goals').toCollection().modify((g: any) => {
+        if (!g.status) g.status = g.currentAmount >= g.targetAmount ? 'achieved' : 'active'
+        if (!g.createdAt) g.createdAt = new Date().toISOString()
+        if (!Array.isArray(g.contributions)) g.contributions = []
+        if (typeof g.priority !== 'string') g.priority = 'medium'
+      })
+      // Backfill debts: originalBalance, status, payments, kind
+      await tx.table('debts').toCollection().modify((d: any) => {
+        if (typeof d.originalBalance !== 'number') d.originalBalance = d.balance
+        if (!d.status) d.status = d.balance > 0 ? 'active' : 'paid'
+        if (!Array.isArray(d.payments)) d.payments = []
+        if (!d.kind) d.kind = 'other'
+      })
+    });
+
+    // Version 11 — multi-category budgets (additive, non-destructive).
+    // New optional fields `categories` / `categoryLimits` are stored directly on
+    // budget objects and need no index change. The upgrade backfills existing
+    // single-category budgets so they keep working with the new UI.
+    this.version(11).stores({
+      transactions: 'id, date, type, category, accountId',
+      lending: 'id, contactName, type, status, createdAt',
+      assets: 'id, name, type',
+      bills: 'id, title, dueDate, isPaid',
+      goals: 'id, title, targetDate, status',
+      accounts: 'id, name, type',
+      systemLogs: 'id, timestamp, type',
+      budgets: 'id, category, period',
+      customCategories: 'id, name, type',
+      tags: 'id, name',
+      investments: 'id, name, symbol, accountId',
+      notifications: 'id, type, timestamp',
+      financialBriefs: 'id, period, startDate',
+      templates: 'id, name, category, type',
+      splits: 'id, transactionId, createdAt',
+      subscriptions: 'id, name, cycle, isActive',
+      sharedWallets: 'id, name, inviteCode',
+      debts: 'id, name, status, createdAt',
+      userProfile: 'id',
+      supportTickets: 'id, category, status, priority, createdAt, syncStatus',
+    }).upgrade(async (tx) => {
+      // Backfill budgets: ensure every budget has a `categories` array so the
+      // new multi-category UI can render consistently. Single-category budgets
+      // get a one-item array built from their existing `category`.
+      await tx.table('budgets').toCollection().modify((b: any) => {
+        if (!Array.isArray(b.categories)) {
+          b.categories = b.category ? [b.category] : []
+        }
+        if (typeof b.categoryLimits !== 'object' || b.categoryLimits === null) {
+          b.categoryLimits = {}
+        }
+      })
+    });
+
+    // Version 12 — enrich Shared Wallets (additive, non-destructive).
+    // Members gain a stable `id`; expenses gain `shares` (per-member split),
+    // `category`, `notes`, `splitType`, `createdAt`; wallets gain `currency`,
+    // `description`, `updatedAt`, `archived`. All new fields are optional and
+    // the upgrade backfills legacy rows so older wallets keep working.
+    this.version(12).stores({
+      transactions: 'id, date, type, category, accountId',
+      lending: 'id, contactName, type, status, createdAt',
+      assets: 'id, name, type',
+      bills: 'id, title, dueDate, isPaid',
+      goals: 'id, title, targetDate, status',
+      accounts: 'id, name, type',
+      systemLogs: 'id, timestamp, type',
+      budgets: 'id, category, period',
+      customCategories: 'id, name, type',
+      tags: 'id, name',
+      investments: 'id, name, symbol, accountId',
+      notifications: 'id, type, timestamp',
+      financialBriefs: 'id, period, startDate',
+      templates: 'id, name, category, type',
+      splits: 'id, transactionId, createdAt',
+      subscriptions: 'id, name, cycle, isActive',
+      sharedWallets: 'id, name, inviteCode, archived',
+      debts: 'id, name, status, createdAt',
+      userProfile: 'id',
+      supportTickets: 'id, category, status, priority, createdAt, syncStatus',
+    }).upgrade(async (tx) => {
+      const genId = () =>
+        (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2) + Date.now().toString(36)
+
+      await tx.table('sharedWallets').toCollection().modify((w: any) => {
+        if (typeof w.archived !== 'boolean') w.archived = false
+        if (!w.updatedAt) w.updatedAt = w.createdAt || new Date().toISOString()
+
+        // Ensure every member has a stable id. Build a name→id map so legacy
+        // transactions that stored `paidBy` as a name can be re-pointed to ids.
+        const nameToId: Record<string, string> = {}
+        if (Array.isArray(w.members)) {
+          w.members = w.members.map((m: any) => {
+            const id = m.id || genId()
+            if (m.name) nameToId[String(m.name).toLowerCase()] = id
+            return {
+              id,
+              name: m.name || 'Member',
+              role: m.role || 'editor',
+              balance: typeof m.balance === 'number' ? m.balance : 0,
+            }
+          })
+        } else {
+          w.members = []
+        }
+
+        if (Array.isArray(w.transactions)) {
+          w.transactions = w.transactions.map((t: any) => {
+            // If paidBy looks like a member name, map it to that member's id.
+            let paidBy = t.paidBy
+            if (paidBy && nameToId[String(paidBy).toLowerCase()]) {
+              paidBy = nameToId[String(paidBy).toLowerCase()]
+            }
+            return {
+              id: t.id || genId(),
+              date: t.date || new Date().toISOString().split('T')[0],
+              description: t.description || '',
+              amount: typeof t.amount === 'number' ? t.amount : 0,
+              paidBy: paidBy || (w.members[0]?.id ?? ''),
+              type: t.type === 'income' ? 'income' : 'expense',
+              category: t.category,
+              notes: t.notes,
+              splitType: t.splitType || 'equal',
+              shares: Array.isArray(t.shares) ? t.shares : [],
+              createdAt: t.createdAt || new Date().toISOString(),
+            }
+          })
+        } else {
+          w.transactions = []
+        }
+      })
     });
   }
 }

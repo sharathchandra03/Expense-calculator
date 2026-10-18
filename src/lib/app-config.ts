@@ -32,6 +32,30 @@ export interface AppConfig {
 
   // Visual
   incomeExpenseColorStyle: 'green-red' | 'blue-red' | 'green-orange'
+
+  // Appearance
+  appIcon: 'default' | 'dollar' | 'rupee' | 'rupee-gold'
+  timeFormat: '12h' | '24h'
+  decimalFormat: 'default' | 'comma' | 'none'
+
+  // Preferences
+  defaultPaymentMode: string
+  defaultExpenseCategory: string
+  defaultIncomeCategory: string
+  homeBalanceView: 'net' | 'total' | 'available'
+  hapticsEnabled: boolean
+
+  // Notifications
+  dailyReminderEnabled: boolean
+  dailyReminderTime: string // "HH:mm"
+  budgetAlertsEnabled: boolean
+
+  // Backup
+  autoGDriveBackup: boolean
+
+  // Security
+  accountBalanceLock: boolean
+  biometricLoginEnabled: boolean
 }
 
 const STORAGE_KEY = 'pennyflow-app-config'
@@ -53,6 +77,30 @@ const DEFAULT_CONFIG: AppConfig = {
   weekStartDay: 'monday',
   monthlyStartDate: 1,
   incomeExpenseColorStyle: 'green-red',
+
+  // Appearance
+  appIcon: 'default',
+  timeFormat: '12h',
+  decimalFormat: 'default',
+
+  // Preferences
+  defaultPaymentMode: 'Cash',
+  defaultExpenseCategory: 'Food',
+  defaultIncomeCategory: 'Salary',
+  homeBalanceView: 'net',
+  hapticsEnabled: true,
+
+  // Notifications
+  dailyReminderEnabled: false,
+  dailyReminderTime: '19:00',
+  budgetAlertsEnabled: false,
+
+  // Backup
+  autoGDriveBackup: false,
+
+  // Security
+  accountBalanceLock: false,
+  biometricLoginEnabled: false,
 }
 
 /** Load full config from localStorage, merged with defaults */

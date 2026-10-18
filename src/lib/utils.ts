@@ -61,6 +61,12 @@ const CURRENCY_LOCALES: { [key: string]: string } = {
   THB: 'th-TH',
 }
 
+/** Return the symbol for the active (or given) currency, e.g. "₹" */
+export function getCurrencySymbol(currency?: string): string {
+  const selectedCurrency = currency || getActiveCurrency()
+  return CURRENCY_SYMBOLS[selectedCurrency] || '₹'
+}
+
 // Format currency helper — uses Indian number system for INR
 export function formatCurrency(amount: number, currency?: string): string {
   const selectedCurrency = currency || getActiveCurrency()

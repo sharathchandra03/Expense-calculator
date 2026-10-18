@@ -1,553 +1,820 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, Account, generateUUID, syncAccountToAsset } from '@/db/schema'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { formatCurrency } from '@/lib/utils'
-import { Plus, Trash2, Edit2, X, ArrowLeftRight, Wallet, Landmark, CreditCard, TrendingDown, Bitcoin } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { db, Account, PaymentMode, PaymentModeKind, generateUUID, syncAccountToAsset } from '@/db/schema'
+import { formatCurrency, cn, getCurrencySymbol } from '@/lib/utils'
+import {
+  Plus, X, Info, ChevronRight, Banknote, Landmark, Wallet, CreditCard,
+  Link2, Trash2, ArrowLeftRight, Fingerprint, Type as TypeIcon,
+  Calendar,
+} from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/toast-notification'
+import { Select } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
+import { isBiometricAvailable, verifyWithBiometric } from '@/lib/biometric'
 
-type AccountType = 'cash' | 'bank' | 'card' | 'investment' | 'crypto' | string
+/* ------------------------------------------------------------------ */
+/*  Account type metadata                                             */
+/* ------------------------------------------------------------------ */
 
-const DEFAULT_ACCOUNT_META: Record<string, { icon: React.ElementType; label: string; color: string }> = {
-  cash: { icon: Wallet, label: 'Cash', color: '#10b981' },
-  bank: { icon: Landmark, label: 'Bank', color: '#3b82f6' },
-  card: { icon: CreditCard, label: 'Card', color: '#f59e0b' },
-  investment: { icon: TrendingDown, label: 'Investment', color: '#8b5cf6' },
-  crypto: { icon: Bitcoin, label: 'Crypto', color: '#f97316' },
+type AddKind = 'bank' | 'wallet' | 'card'
+
+const TYPE_META: Record<string, { icon: React.ElementType; label: string; color: string }> = {
+  cash: { icon: Banknote, label: 'Cash', color: '#10b981' },
+  bank: { icon: Landmark, label: 'Bank Account', color: '#3b82f6' },
+  wallet: { icon: Wallet, label: 'Wallet', color: '#8b5cf6' },
+  card: { icon: CreditCard, label: 'Credit Card', color: '#f59e0b' },
+  investment: { icon: Wallet, label: 'Investment', color: '#8b5cf6' },
+  crypto: { icon: Wallet, label: 'Crypto', color: '#f97316' },
 }
 
-function getCustomAccountTypes(): { key: string; label: string }[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const stored = localStorage.getItem('pennyflow-custom-account-types')
-    if (stored) return JSON.parse(stored)
-  } catch {}
-  return []
-}
+// Order in which groups are rendered
+const GROUP_ORDER = ['cash', 'bank', 'wallet', 'card', 'investment', 'crypto']
 
-function saveCustomAccountTypes(types: { key: string; label: string }[]) {
-  localStorage.setItem('pennyflow-custom-account-types', JSON.stringify(types))
-}
-
-function getHiddenAccountTypes(): string[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const stored = localStorage.getItem('pennyflow-hidden-account-types')
-    if (stored) return JSON.parse(stored)
-  } catch {}
-  return []
-}
-
-function saveHiddenAccountTypes(hidden: string[]) {
-  localStorage.setItem('pennyflow-hidden-account-types', JSON.stringify(hidden))
-}
+const PAYMENT_MODE_OPTIONS: { kind: PaymentModeKind; label: string }[] = [
+  { kind: 'debit_card', label: 'Debit Card' },
+  { kind: 'upi', label: 'UPI' },
+  { kind: 'cheque', label: 'Cheque' },
+  { kind: 'internet_banking', label: 'Internet Banking' },
+]
 
 const todayStr = () => new Date().toISOString().split('T')[0]
 
+/* ------------------------------------------------------------------ */
+/*  Main component                                                    */
+/* ------------------------------------------------------------------ */
+
 export function AccountManager() {
-  const [isAdding, setIsAdding] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [isTransferring, setIsTransferring] = useState(false)
-  const [historyId, setHistoryId] = useState<string | null>(null)
-  const [customTypes, setCustomTypes] = useState(getCustomAccountTypes)
-  const [hiddenTypes, setHiddenTypes] = useState(getHiddenAccountTypes)
   const { showToast } = useToast()
-  const [addingType, setAddingType] = useState(false)
-  const [newTypeName, setNewTypeName] = useState('')
-  const [typeConfirm, setTypeConfirm] = useState<{ open: boolean; key?: string; label?: string }>({ open: false })
+  const accounts = useLiveQuery(() => db.accounts.toArray())
+  const safeAccounts = React.useMemo(() => (Array.isArray(accounts) ? accounts : []), [accounts])
 
-  // All available types (defaults not hidden + custom)
-  const ACCOUNT_META = React.useMemo(() => {
-    const meta: Record<string, { icon: React.ElementType; label: string; color: string }> = {}
-    Object.entries(DEFAULT_ACCOUNT_META).forEach(([key, val]) => {
-      if (!hiddenTypes.includes(key)) {
-        meta[key] = val
+  // ---- Show balance (biometric gated) ----
+  const [showBalance, setShowBalance] = useState(false)
+  const [bioAvailable, setBioAvailable] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+
+  useEffect(() => {
+    isBiometricAvailable().then(setBioAvailable)
+    // Balance visibility is session-only — always start hidden on load for privacy.
+  }, [])
+
+  const handleToggleBalance = async () => {
+    if (showBalance) {
+      setShowBalance(false)
+      return
+    }
+    // Turning ON — require fingerprint when available
+    if (bioAvailable) {
+      setVerifying(true)
+      const ok = await verifyWithBiometric()
+      setVerifying(false)
+      if (!ok) {
+        showToast('Authentication failed', 'error')
+        return
       }
-    })
-    customTypes.forEach(ct => {
-      meta[ct.key] = { icon: Wallet, label: ct.label, color: '#6b7280' }
-    })
-    return meta
-  }, [hiddenTypes, customTypes])
-
-  const handleAddType = () => {
-    const label = newTypeName.trim()
-    if (!label) return
-    const key = label.toLowerCase().replace(/\s+/g, '_')
-    if (ACCOUNT_META[key]) return // already exists
-    const updated = [...customTypes, { key, label }]
-    setCustomTypes(updated)
-    saveCustomAccountTypes(updated)
-    setNewTypeName('')
-    setAddingType(false)
-    setFormData({ ...formData, type: key })
-  }
-
-  const handleDeleteType = (key: string) => {
-    const label = ACCOUNT_META[key]?.label || key
-    setTypeConfirm({ open: true, key, label })
-  }
-
-  const handleConfirmDeleteType = () => {
-    const key = typeConfirm.key
-    if (!key) return
-    if (DEFAULT_ACCOUNT_META[key]) {
-      const updated = [...hiddenTypes, key]
-      setHiddenTypes(updated)
-      saveHiddenAccountTypes(updated)
-    } else {
-      const updated = customTypes.filter(t => t.key !== key)
-      setCustomTypes(updated)
-      saveCustomAccountTypes(updated)
     }
-    if (formData.type === key) {
-      const remaining = Object.keys(ACCOUNT_META).filter(k => k !== key)
-      setFormData({ ...formData, type: remaining[0] || 'bank' })
-    }
-    setTypeConfirm({ open: false })
+    setShowBalance(true)
   }
 
-  const [formData, setFormData] = useState<{ name: string; type: string; balance: number }>({
-    name: '',
-    type: 'bank',
-    balance: 0,
-  })
+  // ---- Add / edit sheet ----
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
-  const [transfer, setTransfer] = useState<{ from: string; to: string; amount: number }>({
-    from: '',
-    to: '',
-    amount: 0,
-  })
-
-  const accounts = useLiveQuery(() => db.accounts.toArray()) ?? []
-  const safeAccounts = Array.isArray(accounts) ? accounts : []
-
-  const totalBalance = safeAccounts.reduce((sum, a) => sum + (a.balance || 0), 0)
-
-  const resetForm = () => {
-    setFormData({ name: '', type: 'bank', balance: 0 })
+  const openAdd = () => {
     setEditingId(null)
-    setIsAdding(false)
+    setSheetOpen(true)
   }
 
-  const appendHistory = (account: Account, balance: number) => {
-    const history = Array.isArray(account.balanceHistory) ? [...account.balanceHistory] : []
-    const t = todayStr()
-    const idx = history.findIndex((h) => h.date === t)
-    if (idx >= 0) history[idx] = { date: t, balance }
-    else history.push({ date: t, balance })
-    return history
+  const openEdit = (acc: Account) => {
+    setEditingId(acc.id)
+    setSheetOpen(true)
   }
 
-  const handleSave = async () => {
-    const name = formData.name.trim()
-    if (!name) return
-
-    try {
-      if (editingId) {
-        const existing = safeAccounts.find((a) => a.id === editingId)
-        await db.accounts.update(editingId, {
-          name,
-          type: formData.type as any,
-          balance: formData.balance,
-          balanceHistory: existing ? appendHistory(existing, formData.balance) : [{ date: todayStr(), balance: formData.balance }],
-        })
-        await syncAccountToAsset(name, formData.balance)
-      } else {
-        await db.accounts.add({
-          id: generateUUID(),
-          name,
-          type: formData.type as any,
-          balance: formData.balance,
-          balanceHistory: [{ date: todayStr(), balance: formData.balance }],
-        })
-      }
-      resetForm()
-    } catch (err) {
-      console.error('Error saving account:', err)
-    }
-  }
-
-  const handleEdit = (account: Account) => {
-    setFormData({ name: account.name, type: account.type, balance: account.balance })
-    setEditingId(account.id)
-    setIsAdding(true)
-    setIsTransferring(false)
-  }
-
+  // ---- Delete ----
   const [accountConfirm, setAccountConfirm] = useState<{ open: boolean; id?: string; name?: string }>({ open: false })
-
-  const handleDelete = (id: string) => {
-    const acc = safeAccounts.find(a => a.id === id)
-    setAccountConfirm({ open: true, id, name: acc?.name || 'this account' })
-  }
-
-  const handleConfirmDeleteAccount = async () => {
-    if (accountConfirm.id) {
-      await db.accounts.delete(accountConfirm.id)
-    }
+  const confirmDelete = async () => {
+    if (accountConfirm.id) await db.accounts.delete(accountConfirm.id)
     setAccountConfirm({ open: false })
   }
 
-  const handleTransfer = async () => {
-    const amount = Number(transfer.amount)
-    if (!transfer.from || !transfer.to || transfer.from === transfer.to || amount <= 0) {
-      showToast('Pick two different accounts and enter a valid amount')
-      return
-    }
-    const fromAcc = safeAccounts.find((a) => a.id === transfer.from)
-    const toAcc = safeAccounts.find((a) => a.id === transfer.to)
-    if (!fromAcc || !toAcc) return
-    if (fromAcc.balance < amount) {
-      showToast('Insufficient balance in the source account')
-      return
-    }
+  // ---- Transfer sheet ----
+  const [transferOpen, setTransferOpen] = useState(false)
 
-    const newFrom = fromAcc.balance - amount
-    const newTo = toAcc.balance + amount
+  // ---- Summary ----
+  // Available Balance: everything that is cash-like (not credit cards).
+  // Available Credit: remaining credit on cards (creditLimit - usage).
+  const availableBalance = safeAccounts
+    .filter((a) => a.type !== 'card')
+    .reduce((sum, a) => sum + (a.balance || 0), 0)
 
-    try {
-      await db.transaction('rw', [db.accounts, db.assets, db.systemLogs], async () => {
-        await db.accounts.update(fromAcc.id, {
-          balance: newFrom,
-          balanceHistory: appendHistory(fromAcc, newFrom),
-        })
-        await db.accounts.update(toAcc.id, {
-          balance: newTo,
-          balanceHistory: appendHistory(toAcc, newTo),
-        })
-        await syncAccountToAsset(fromAcc.name, newFrom)
-        await syncAccountToAsset(toAcc.name, newTo)
-        await db.systemLogs.add({
-          id: generateUUID(),
-          timestamp: new Date().toISOString(),
-          type: 'system',
-          description: `Transfer of ${formatCurrency(amount)} from ${fromAcc.name} to ${toAcc.name}`,
-          amount,
-        })
-      })
-      setTransfer({ from: '', to: '', amount: 0 })
-      setIsTransferring(false)
-    } catch (err) {
-      console.error('Transfer failed:', err)
+  const availableCredit = safeAccounts
+    .filter((a) => a.type === 'card')
+    .reduce((sum, a) => sum + Math.max(0, a.balance || 0), 0)
+
+  // ---- Group accounts by type ----
+  const groups = React.useMemo(() => {
+    const map = new Map<string, Account[]>()
+    for (const a of safeAccounts) {
+      const key = TYPE_META[a.type] ? a.type : 'bank'
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(a)
     }
-  }
+    const ordered: { key: string; items: Account[] }[] = []
+    for (const key of GROUP_ORDER) {
+      if (map.has(key)) {
+        ordered.push({ key, items: map.get(key)! })
+        map.delete(key)
+      }
+    }
+    // Any leftover unknown types
+    for (const [key, items] of map) ordered.push({ key, items })
+    return ordered
+  }, [safeAccounts])
 
-  const historyAccount = safeAccounts.find((a) => a.id === historyId)
+  const maskedValue = (value: number) => (showBalance ? formatCurrency(value) : `${getCurrencySymbol()}••••••`)
 
   return (
-    <div className="flex flex-col space-y-5">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Accounts</h1>
-        <p className="text-xs text-muted-foreground">Manage balances and move money between accounts.</p>
-      </div>
-
-      {/* Total balance summary */}
-      <div className="rounded-3xl bg-gradient-to-br from-primary/15 to-primary/5 border border-primary/20 p-5">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Balance</p>
-        <p className="text-2xl sm:text-3xl font-bold mt-1 break-all">{formatCurrency(totalBalance)}</p>
-        <p className="text-[11px] text-muted-foreground mt-1">{safeAccounts.length} account{safeAccounts.length !== 1 ? 's' : ''}</p>
-      </div>
-
-      {/* Action buttons */}
-      {!isAdding && !isTransferring && (
-        <div className="flex gap-2">
-          <button
-            onClick={() => { setIsAdding(true); setIsTransferring(false) }}
-            className="flex-1 h-11 rounded-full bg-foreground text-background font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2"
-          >
-            <Plus className="w-4 h-4" /> Add Account
-          </button>
-          <button
-            onClick={() => { setIsTransferring(true); setIsAdding(false) }}
-            disabled={safeAccounts.length < 2}
-            className="flex-1 h-11 rounded-full border border-border/60 font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 disabled:opacity-40"
-          >
-            <ArrowLeftRight className="w-4 h-4" /> Transfer
-          </button>
+    <div className="flex flex-col">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-1.5">
+          <h1 className="text-xl font-bold tracking-tight">All Accounts</h1>
+          <Info className="w-4 h-4 text-muted-foreground mt-1" />
         </div>
+        <button
+          onClick={openAdd}
+          className="flex items-center gap-1.5 h-9 px-4 rounded-full bg-secondary border border-border/60 text-sm font-semibold hover:bg-secondary/70 transition-colors"
+        >
+          <Plus className="w-4 h-4" /> Add account
+        </button>
+      </div>
+
+      {/* Show balance toggle row */}
+      <div className="flex items-center justify-between gap-3 mt-3">
+        <p className="text-xs text-muted-foreground leading-snug">
+          Transactions based balance, actual may va…{' '}
+          <span className="font-semibold text-foreground">Show balance</span>
+        </p>
+        <button
+          role="switch"
+          aria-checked={showBalance}
+          aria-label="Show balance"
+          disabled={verifying}
+          onClick={handleToggleBalance}
+          className={cn(
+            'relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors',
+            showBalance ? 'bg-primary' : 'bg-secondary border border-border/60',
+            verifying && 'opacity-60'
+          )}
+        >
+          <motion.span
+            layout
+            transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+            className={cn(
+              'inline-flex h-5 w-5 items-center justify-center rounded-full bg-white shadow',
+              showBalance ? 'ml-6' : 'ml-1'
+            )}
+          >
+            {verifying && <Fingerprint className="w-3 h-3 text-primary animate-pulse" />}
+          </motion.span>
+        </button>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-3 mt-4">
+        <div className="rounded-3xl bg-secondary/60 border border-border/50 p-4">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            Available Balance <Info className="w-3 h-3" />
+          </div>
+          <p className="text-lg sm:text-xl font-bold mt-1 break-all">{maskedValue(availableBalance)}</p>
+        </div>
+        <div className="rounded-3xl bg-secondary/60 border border-border/50 p-4">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            Available Credit <Info className="w-3 h-3" />
+          </div>
+          <p className="text-lg sm:text-xl font-bold mt-1 break-all">{maskedValue(availableCredit)}</p>
+        </div>
+      </div>
+
+      {/* Transfer shortcut */}
+      {safeAccounts.length >= 2 && (
+        <button
+          onClick={() => setTransferOpen(true)}
+          className="mt-3 flex items-center justify-center gap-2 h-10 rounded-full border border-border/60 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:bg-secondary/60 transition-colors"
+        >
+          <ArrowLeftRight className="w-4 h-4" /> Transfer money
+        </button>
       )}
 
-      {/* Add / Edit form */}
-      <AnimatePresence>
-        {isAdding && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="bg-secondary/50 border border-border/50 rounded-3xl p-5 space-y-4"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm">{editingId ? 'Edit Account' : 'New Account'}</h3>
-              <button onClick={resetForm} className="p-2 hover:bg-secondary rounded-full transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase">Name</label>
-              <Input
-                placeholder="e.g., HDFC Savings"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="mt-2"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase">Type</label>
-              <Select
-                value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value as AccountType })}
-                className="mt-2"
-              >
-                {Object.entries(ACCOUNT_META).map(([key, meta]) => (
-                  <option key={key} value={key}>{meta.label}</option>
-                ))}
-              </Select>
-              {/* Add/Delete type controls */}
-              <div className="mt-2 space-y-2">
-                <div className="flex flex-wrap gap-1">
-                  {Object.entries(ACCOUNT_META).map(([key, meta]) => (
-                    <span key={key} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-secondary/60 text-muted-foreground">
-                      {meta.label}
-                      <button onClick={() => handleDeleteType(key)} className="opacity-40 hover:opacity-100 hover:text-destructive">
-                        <X className="w-2.5 h-2.5" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                {!addingType ? (
-                  <button type="button" onClick={() => setAddingType(true)} className="text-[11px] text-primary font-semibold hover:underline">
-                    + Add new type
+      {/* Grouped account list */}
+      <div className="mt-5 space-y-6">
+        {groups.map(({ key, items }) => {
+          const meta = TYPE_META[key] ?? TYPE_META.bank
+          const Icon = meta.icon
+          return (
+            <div key={key}>
+              <div className="flex items-center gap-2 mb-2.5 px-1">
+                <Icon className="w-4 h-4" style={{ color: meta.color }} />
+                <h2 className="text-base font-bold">{meta.label}</h2>
+              </div>
+              <div className="space-y-2">
+                {items.map((account) => (
+                  <button
+                    key={account.id}
+                    onClick={() => openEdit(account)}
+                    className="w-full flex items-center justify-between gap-3 rounded-2xl bg-secondary/50 border border-border/50 px-4 py-4 text-left hover:bg-secondary/70 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate">{account.name}</p>
+                      {account.type === 'card' && account.creditLimit ? (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Limit {maskedValue(account.creditLimit)}
+                        </p>
+                      ) : account.paymentModes && account.paymentModes.length > 0 ? (
+                        <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                          {account.paymentModes.map((p) => p.name).join(' · ')}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={cn('text-sm font-bold', account.balance < 0 ? 'text-red-500' : 'text-foreground')}>
+                        {maskedValue(account.balance)}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    </div>
                   </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={newTypeName}
-                      onChange={(e) => setNewTypeName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddType() } }}
-                      placeholder="Type name"
-                      className="flex-1 h-8 px-3 rounded-lg border border-border/70 bg-secondary text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                    />
-                    <button type="button" onClick={handleAddType} disabled={!newTypeName.trim()} className="text-[10px] px-2.5 py-1 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">Add</button>
-                    <button type="button" onClick={() => { setAddingType(false); setNewTypeName('') }} className="text-[10px] px-2 py-1 rounded-lg text-muted-foreground hover:text-foreground">Cancel</button>
-                  </div>
-                )}
+                ))}
               </div>
             </div>
-
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase">
-                {editingId ? 'Current Balance' : 'Starting Balance'}
-              </label>
-              <Input
-                type="number"
-                inputMode="decimal"
-                placeholder="0"
-                value={formData.balance || ''}
-                onChange={(e) => setFormData({ ...formData, balance: parseFloat(e.target.value) || 0 })}
-                className="mt-2"
-              />
-            </div>
-
-            <button
-              onClick={handleSave}
-              className="w-full h-10 rounded-full bg-foreground text-background font-semibold text-xs uppercase tracking-wider"
-            >
-              {editingId ? 'Update Account' : 'Save Account'}
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Transfer form */}
-      <AnimatePresence>
-        {isTransferring && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="bg-secondary/50 border border-border/50 rounded-3xl p-5 space-y-4"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm">Transfer Money</h3>
-              <button onClick={() => setIsTransferring(false)} className="p-2 hover:bg-secondary rounded-full transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase">From</label>
-              <Select
-                value={transfer.from}
-                onChange={(e) => setTransfer({ ...transfer, from: e.target.value })}
-                className="mt-2"
-              >
-                <option value="">Select account</option>
-                {safeAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} - {formatCurrency(a.balance)}</option>
-                ))}
-              </Select>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase">To</label>
-              <Select
-                value={transfer.to}
-                onChange={(e) => setTransfer({ ...transfer, to: e.target.value })}
-                className="mt-2"
-              >
-                <option value="">Select account</option>
-                {safeAccounts.filter((a) => a.id !== transfer.from).map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} - {formatCurrency(a.balance)}</option>
-                ))}
-              </Select>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase">Amount</label>
-              <Input
-                type="number"
-                inputMode="decimal"
-                placeholder="0"
-                value={transfer.amount || ''}
-                onChange={(e) => setTransfer({ ...transfer, amount: parseFloat(e.target.value) || 0 })}
-                className="mt-2"
-              />
-            </div>
-
-            <button
-              onClick={handleTransfer}
-              className="w-full h-10 rounded-full bg-foreground text-background font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-2"
-            >
-              <ArrowLeftRight className="w-4 h-4" /> Confirm Transfer
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Account list */}
-      <div className="space-y-2">
-        <AnimatePresence mode="popLayout">
-          {safeAccounts.map((account) => {
-            const meta = ACCOUNT_META[account.type] ?? ACCOUNT_META.bank
-            const Icon = meta.icon
-            return (
-              <motion.div
-                key={account.id}
-                layout
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                className="rounded-2xl bg-card border border-border/50 p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span
-                      className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: `${meta.color}22` }}
-                    >
-                      <Icon className="w-5 h-5" style={{ color: meta.color }} />
-                    </span>
-                    <div>
-                      <p className="text-sm font-semibold">{account.name}</p>
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{meta.label}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className={cn('text-sm font-bold', account.balance < 0 ? 'text-red-500' : 'text-foreground')}>
-                      {formatCurrency(account.balance)}
-                    </p>
-                    <div className="flex gap-1 justify-end mt-1">
-                      <button
-                        onClick={() => setHistoryId(historyId === account.id ? null : account.id)}
-                        className="p-1.5 hover:bg-secondary/60 rounded-lg transition-colors"
-                        title="Balance history"
-                      >
-                        <TrendingDown className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
-                      <button
-                        onClick={() => handleEdit(account)}
-                        className="p-1.5 hover:bg-secondary/60 rounded-lg transition-colors"
-                      >
-                        <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(account.id)}
-                        className="p-1.5 hover:bg-destructive/10 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Balance history */}
-                <AnimatePresence>
-                  {historyId === account.id && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="mt-3 pt-3 border-t border-border/40 space-y-1.5">
-                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Balance History</p>
-                        {(account.balanceHistory && account.balanceHistory.length > 0) ? (
-                          [...account.balanceHistory].reverse().slice(0, 6).map((h, i) => (
-                            <div key={i} className="flex items-center justify-between text-xs">
-                              <span className="text-muted-foreground">{h.date}</span>
-                              <span className="font-medium">{formatCurrency(h.balance)}</span>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-xs text-muted-foreground/70">No history recorded yet.</p>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            )
-          })}
-        </AnimatePresence>
+          )
+        })}
 
         {safeAccounts.length === 0 && (
-          <div className="text-center py-10 bg-secondary/20 rounded-3xl border border-dashed border-border/60">
+          <div className="text-center py-12 bg-secondary/20 rounded-3xl border border-dashed border-border/60">
             <Wallet className="h-8 w-8 text-muted-foreground/60 mx-auto mb-2" />
             <p className="text-xs font-semibold text-muted-foreground">No accounts yet</p>
-            <p className="text-[10px] text-muted-foreground/80 mt-1">Add your first account to get started.</p>
+            <p className="text-[10px] text-muted-foreground/80 mt-1">Tap “Add account” to get started.</p>
           </div>
         )}
       </div>
 
-      {/* Confirm dialogs */}
-      <ConfirmDialog
-        isOpen={typeConfirm.open}
-        title="Remove account type?"
-        message={`"${typeConfirm.label}" will be removed from available types.`}
-        confirmLabel="Remove"
-        variant="warning"
-        onConfirm={handleConfirmDeleteType}
-        onCancel={() => setTypeConfirm({ open: false })}
-      />
+      {/* Add / Edit sheet */}
+      <AnimatePresence>
+        {sheetOpen && (
+          <AddAccountSheet
+            key="add-sheet"
+            editingId={editingId}
+            accounts={safeAccounts}
+            onClose={() => setSheetOpen(false)}
+            onRequestDelete={(id, name) => {
+              setSheetOpen(false)
+              setAccountConfirm({ open: true, id, name })
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Transfer sheet */}
+      <AnimatePresence>
+        {transferOpen && (
+          <TransferSheet
+            key="transfer-sheet"
+            accounts={safeAccounts}
+            onClose={() => setTransferOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
       <ConfirmDialog
         isOpen={accountConfirm.open}
         title="Delete account?"
         message={`"${accountConfirm.name}" will be deleted. Related transactions are not affected.`}
         confirmLabel="Delete"
         variant="danger"
-        onConfirm={handleConfirmDeleteAccount}
+        onConfirm={confirmDelete}
         onCancel={() => setAccountConfirm({ open: false })}
       />
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Bottom sheet shell                                                */
+/* ------------------------------------------------------------------ */
+
+function BottomSheet({
+  title,
+  onClose,
+  children,
+  zIndex = 60,
+}: {
+  title: string
+  onClose: () => void
+  children: React.ReactNode
+  zIndex?: number
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      style={{ zIndex }}
+      className="fixed inset-0 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 30, stiffness: 320 }}
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full sm:max-w-md bg-card border-t sm:border border-border/70 rounded-t-3xl sm:rounded-3xl p-6 max-h-[90vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-xl font-bold">{title}</h3>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-full bg-secondary text-foreground hover:bg-secondary/70 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        {children}
+      </motion.div>
+    </motion.div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Add / Edit account sheet                                          */
+/* ------------------------------------------------------------------ */
+
+function AddAccountSheet({
+  editingId,
+  accounts,
+  onClose,
+  onRequestDelete,
+}: {
+  editingId: string | null
+  accounts: Account[]
+  onClose: () => void
+  onRequestDelete: (id: string, name: string) => void
+}) {
+  const { showToast } = useToast()
+  const existing = editingId ? accounts.find((a) => a.id === editingId) : undefined
+
+  // Map account type -> add-kind tab
+  const initialKind: AddKind = existing
+    ? existing.type === 'card'
+      ? 'card'
+      : existing.type === 'wallet'
+      ? 'wallet'
+      : 'bank'
+    : 'bank'
+
+  const [kind, setKind] = useState<AddKind>(initialKind)
+  const [name, setName] = useState(existing?.name ?? '')
+  const [balance, setBalance] = useState<string>(existing?.balance ? String(existing.balance) : '')
+  const [creditLimit, setCreditLimit] = useState<string>(existing?.creditLimit ? String(existing.creditLimit) : '')
+  const [billingDay, setBillingDay] = useState<number>(existing?.billingCycleDay ?? 1)
+  const [dueDay, setDueDay] = useState<number>(existing?.paymentDueDay ?? 15)
+  const [paymentModes, setPaymentModes] = useState<PaymentMode[]>(existing?.paymentModes ?? [])
+
+  const [modeSheetOpen, setModeSheetOpen] = useState(false)
+
+  const canDeleteType = !existing || existing.type !== 'cash'
+
+  const appendHistory = (acc: Account | undefined, bal: number) => {
+    const history = Array.isArray(acc?.balanceHistory) ? [...acc!.balanceHistory] : []
+    const t = todayStr()
+    const idx = history.findIndex((h) => h.date === t)
+    if (idx >= 0) history[idx] = { date: t, balance: bal }
+    else history.push({ date: t, balance: bal })
+    return history
+  }
+
+  const handleSave = async () => {
+    const trimmed = name.trim()
+    if (!trimmed) {
+      showToast('Enter an account name', 'error')
+      return
+    }
+
+    const type: Account['type'] = kind === 'card' ? 'card' : kind === 'wallet' ? 'wallet' : 'bank'
+    const bal = kind === 'card'
+      ? parseFloat(creditLimit || '0') // available limit uses balance field
+      : parseFloat(balance || '0')
+    const safeBal = isNaN(bal) ? 0 : bal
+
+    const payload: Partial<Account> = {
+      name: trimmed,
+      type,
+      balance: safeBal,
+      balanceHistory: appendHistory(existing, safeBal),
+    }
+
+    if (kind === 'card') {
+      const limit = parseFloat(creditLimit || '0')
+      payload.creditLimit = isNaN(limit) ? 0 : limit
+      payload.billingCycleDay = billingDay
+      payload.paymentDueDay = dueDay
+      payload.paymentModes = []
+    } else if (kind === 'bank') {
+      payload.paymentModes = paymentModes
+      payload.creditLimit = undefined
+      payload.billingCycleDay = undefined
+      payload.paymentDueDay = undefined
+    } else {
+      payload.paymentModes = []
+      payload.creditLimit = undefined
+      payload.billingCycleDay = undefined
+      payload.paymentDueDay = undefined
+    }
+
+    try {
+      if (editingId) {
+        await db.accounts.update(editingId, payload)
+        await syncAccountToAsset(trimmed, safeBal)
+      } else {
+        await db.accounts.add({
+          ...(payload as Omit<Account, 'id'>),
+          id: generateUUID(),
+        })
+      }
+      onClose()
+    } catch (err) {
+      console.error('Error saving account:', err)
+      showToast('Could not save account', 'error')
+    }
+  }
+
+  const tabs: { id: AddKind; label: string }[] = [
+    { id: 'bank', label: 'Bank Account' },
+    { id: 'wallet', label: 'Wallet' },
+    { id: 'card', label: 'Credit Card' },
+  ]
+
+  return (
+    <BottomSheet title={editingId ? 'Edit account' : 'Add account'} onClose={onClose}>
+      {/* Type tabs — locked once an account exists (type stays) */}
+      <div className="flex gap-1 p-1 rounded-full bg-secondary/60 border border-border/50">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            disabled={!!editingId && t.id !== kind}
+            onClick={() => setKind(t.id)}
+            className={cn(
+              'flex-1 h-9 rounded-full text-xs font-semibold transition-colors',
+              kind === t.id ? 'bg-foreground text-background' : 'text-muted-foreground',
+              !!editingId && t.id !== kind && 'opacity-30 cursor-not-allowed'
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Name */}
+      <div className="mt-5 flex items-center gap-3 border-b border-border/60 pb-2">
+        <TypeIcon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name"
+          className="flex-1 bg-transparent text-xl font-medium placeholder:text-muted-foreground/50 focus:outline-none"
+        />
+      </div>
+
+      {/* Balance / limits */}
+      {kind === 'card' ? (
+        <div className="mt-5 space-y-5">
+          <LabeledAmount
+            label="Current Available Limit"
+            value={creditLimit}
+            onChange={setCreditLimit}
+          />
+          <LabeledAmount
+            label="Total Credit Limit"
+            value={creditLimit}
+            onChange={setCreditLimit}
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <DayField
+              label="Billing Cycle Start Date"
+              value={billingDay}
+              onChange={setBillingDay}
+            />
+            <DayField
+              label="Payment Due Date"
+              value={dueDay}
+              onChange={setDueDay}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5">
+          <LabeledAmount label="Current Balance" value={balance} onChange={setBalance} />
+        </div>
+      )}
+
+      {/* Linked payment modes (bank only) */}
+      {kind === 'bank' && (
+        <div className="mt-7">
+          <div className="flex items-center justify-between">
+            <h4 className="text-base font-bold">Linked payment modes</h4>
+            <button
+              onClick={() => setModeSheetOpen(true)}
+              className="flex items-center gap-1 h-8 px-3 rounded-full bg-secondary border border-border/60 text-xs font-semibold hover:bg-secondary/70 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add
+            </button>
+          </div>
+
+          {paymentModes.length === 0 ? (
+            <div className="mt-5 flex flex-col items-center text-center py-6">
+              <Link2 className="w-7 h-7 text-muted-foreground/60" />
+              <p className="mt-3 text-sm font-semibold text-muted-foreground">Link your payment modes</p>
+              <p className="mt-1 text-xs text-muted-foreground/80 max-w-xs">
+                You can add a Debit Card, UPI or other payment modes to use with this bank account.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {paymentModes.map((m) => {
+                const label = PAYMENT_MODE_OPTIONS.find((o) => o.kind === m.kind)?.label ?? m.kind
+                return (
+                  <div
+                    key={m.id}
+                    className="flex items-center justify-between rounded-2xl bg-secondary/50 border border-border/50 px-4 py-3"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold">{m.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{label}</p>
+                    </div>
+                    <button
+                      onClick={() => setPaymentModes((prev) => prev.filter((p) => p.id !== m.id))}
+                      className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Footer actions */}
+      <div className="mt-8 flex items-center justify-between gap-3">
+        {editingId && canDeleteType ? (
+          <button
+            onClick={() => onRequestDelete(editingId, name || 'this account')}
+            className="flex items-center gap-1.5 h-11 px-4 rounded-full border border-border/60 text-sm font-semibold text-red-500 hover:bg-destructive/10 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" /> Delete
+          </button>
+        ) : (
+          <span />
+        )}
+        <Button onClick={handleSave} size="pill" className="px-8">Save</Button>
+      </div>
+
+      {/* Add payment mode sub-sheet */}
+      <AnimatePresence>
+        {modeSheetOpen && (
+          <AddPaymentModeSheet
+            onClose={() => setModeSheetOpen(false)}
+            onSave={(mode) => {
+              setPaymentModes((prev) => [...prev, mode])
+              setModeSheetOpen(false)
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </BottomSheet>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Add payment mode sub-sheet                                        */
+/* ------------------------------------------------------------------ */
+
+function AddPaymentModeSheet({
+  onClose,
+  onSave,
+}: {
+  onClose: () => void
+  onSave: (mode: PaymentMode) => void
+}) {
+  const { showToast } = useToast()
+  const [name, setName] = useState('')
+  const [kind, setKind] = useState<PaymentModeKind>('debit_card')
+
+  const handleSave = () => {
+    const trimmed = name.trim()
+    if (!trimmed) {
+      showToast('Enter a payment mode name', 'error')
+      return
+    }
+    onSave({ id: generateUUID(), name: trimmed, kind })
+  }
+
+  return (
+    <BottomSheet title="Add payment mode" onClose={onClose} zIndex={70}>
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Payment mode name"
+        className="w-full h-14 rounded-2xl border border-border/60 bg-secondary/40 px-4 text-base placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring"
+      />
+
+      <div className="mt-6 flex flex-wrap gap-2">
+        {PAYMENT_MODE_OPTIONS.map((opt) => (
+          <button
+            key={opt.kind}
+            onClick={() => setKind(opt.kind)}
+            className={cn(
+              'h-10 px-4 rounded-full border text-sm font-semibold transition-colors',
+              kind === opt.kind
+                ? 'border-foreground text-foreground'
+                : 'border-border/60 text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-8 flex justify-end">
+        <Button onClick={handleSave} size="pill" className="px-8">Save</Button>
+      </div>
+    </BottomSheet>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Transfer sheet                                                    */
+/* ------------------------------------------------------------------ */
+
+function TransferSheet({
+  accounts,
+  onClose,
+}: {
+  accounts: Account[]
+  onClose: () => void
+}) {
+  const { showToast } = useToast()
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [amount, setAmount] = useState('')
+
+  const appendHistory = (acc: Account, bal: number) => {
+    const history = Array.isArray(acc.balanceHistory) ? [...acc.balanceHistory] : []
+    const t = todayStr()
+    const idx = history.findIndex((h) => h.date === t)
+    if (idx >= 0) history[idx] = { date: t, balance: bal }
+    else history.push({ date: t, balance: bal })
+    return history
+  }
+
+  const handleTransfer = async () => {
+    const amt = parseFloat(amount || '0')
+    if (!from || !to || from === to || isNaN(amt) || amt <= 0) {
+      showToast('Pick two different accounts and a valid amount', 'error')
+      return
+    }
+    const fromAcc = accounts.find((a) => a.id === from)
+    const toAcc = accounts.find((a) => a.id === to)
+    if (!fromAcc || !toAcc) return
+    if (fromAcc.balance < amt) {
+      showToast('Insufficient balance in the source account', 'error')
+      return
+    }
+    const newFrom = fromAcc.balance - amt
+    const newTo = toAcc.balance + amt
+    try {
+      await db.transaction('rw', [db.accounts, db.assets, db.systemLogs], async () => {
+        await db.accounts.update(fromAcc.id, { balance: newFrom, balanceHistory: appendHistory(fromAcc, newFrom) })
+        await db.accounts.update(toAcc.id, { balance: newTo, balanceHistory: appendHistory(toAcc, newTo) })
+        await syncAccountToAsset(fromAcc.name, newFrom)
+        await syncAccountToAsset(toAcc.name, newTo)
+        await db.systemLogs.add({
+          id: generateUUID(),
+          timestamp: new Date().toISOString(),
+          type: 'system',
+          description: `Transfer of ${formatCurrency(amt)} from ${fromAcc.name} to ${toAcc.name}`,
+          amount: amt,
+        })
+      })
+      onClose()
+    } catch (err) {
+      console.error('Transfer failed:', err)
+      showToast('Transfer failed', 'error')
+    }
+  }
+
+  return (
+    <BottomSheet title="Transfer money" onClose={onClose}>
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground uppercase">From</label>
+          <Select value={from} onChange={(e) => setFrom(e.target.value)} className="mt-2">
+            <option value="">Select account</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>{a.name} — {formatCurrency(a.balance)}</option>
+            ))}
+          </Select>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground uppercase">To</label>
+          <Select value={to} onChange={(e) => setTo(e.target.value)} className="mt-2">
+            <option value="">Select account</option>
+            {accounts.filter((a) => a.id !== from).map((a) => (
+              <option key={a.id} value={a.id}>{a.name} — {formatCurrency(a.balance)}</option>
+            ))}
+          </Select>
+        </div>
+        <LabeledAmount label="Amount" value={amount} onChange={setAmount} />
+      </div>
+      <div className="mt-8 flex justify-end">
+        <Button onClick={handleTransfer} size="pill" className="px-8">
+          <ArrowLeftRight className="w-4 h-4" /> Transfer
+        </Button>
+      </div>
+    </BottomSheet>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Small field helpers                                               */
+/* ------------------------------------------------------------------ */
+
+function LabeledAmount({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="text-muted-foreground font-medium text-base mt-6 select-none">{getCurrencySymbol()}</span>
+      <div className="flex-1">
+        <label className="text-xs text-muted-foreground">{label}</label>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/[^0-9.]/g, '')
+            if ((raw.match(/\./g) || []).length > 1) return
+            onChange(raw)
+          }}
+          placeholder="0"
+          className="w-full bg-transparent border-b border-border/60 pb-1 text-2xl font-bold placeholder:text-muted-foreground/40 focus:outline-none focus:border-ring"
+        />
+      </div>
+    </div>
+  )
+}
+
+function DayField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: number
+  onChange: (v: number) => void
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <Calendar className="w-4 h-4 text-muted-foreground mt-7 flex-shrink-0" />
+      <div className="flex-1">
+        <label className="text-xs text-muted-foreground">{label}</label>
+        <div className="flex items-baseline gap-1 border-b border-border/60 pb-1">
+          <Select
+            value={String(value)}
+            onChange={(e) => onChange(parseInt(e.target.value, 10))}
+            className="h-auto w-auto min-w-[72px] border-0 bg-transparent px-0 py-0 rounded-none active:scale-100"
+            triggerClassName="text-2xl font-bold"
+          >
+            {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+              <option key={d} value={String(d)}>{String(d).padStart(2, '0')}</option>
+            ))}
+          </Select>
+          <span className="text-xs text-muted-foreground">of every month</span>
+        </div>
+      </div>
     </div>
   )
 }

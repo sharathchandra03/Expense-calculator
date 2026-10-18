@@ -18,6 +18,7 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { TimePicker } from '@/components/ui/time-picker'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/toast-notification'
+import { AccountSelect } from '@/components/ui/account-select'
 
 export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab: string) => void } = {}) {
   const [search, setSearch] = useState('')
@@ -485,9 +486,7 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
                                     <TimePicker value={editData.time} onChange={(t) => setEditData({ ...editData, time: t })} className="flex-1" />
                                   </div>
                                   <div className="flex gap-2">
-                                    <select value={editData.accountId} onChange={(e) => setEditData({ ...editData, accountId: e.target.value })} className="flex-1 h-8 px-2 rounded-lg bg-secondary border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring appearance-none">
-                                      {safeAccounts.map((acc) => (<option key={acc.id} value={acc.id}>{acc.name}</option>))}
-                                    </select>
+                                    <AccountSelect value={editData.accountId} onChange={(v) => setEditData({ ...editData, accountId: v })} placeholder="Account" className="h-9 text-xs" />
                                   </div>
                                   {tx.receiptImage && (
                                     <button type="button" onClick={(e) => { e.stopPropagation(); setReceiptLightbox(tx.receiptImage!) }} className="flex items-center gap-2 p-2 rounded-lg bg-amber-500/5 border border-amber-500/20 hover:bg-amber-500/10 transition-colors">

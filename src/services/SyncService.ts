@@ -20,9 +20,66 @@ const SYNC_TABLES = [
   'templates',
   'splits',
   'sharedWallets',
+  'financialBriefs',
 ] as const
 
 type SyncTable = typeof SYNC_TABLES[number]
+
+/**
+ * localStorage preference keys that are synced to the cloud as the
+ * `_preferences` row. Keyed by the short name stored in the cloud blob →
+ * the actual localStorage key.
+ *
+ * TO SYNC A NEW PREFERENCE: add one entry here. It will automatically be
+ * included in every push AND restored by every pull/force-restore path.
+ * This is the single source of truth — do NOT inline-list keys elsewhere.
+ */
+const PREFERENCE_KEYS: Record<string, string> = {
+  currency: 'finance-os-currency',
+  theme: 'finance-os-theme',
+  notifications: 'finance-os-notifications',
+  profile: 'finance-os-profile',
+  hiddenCategories: 'pennyflow-hidden-categories',
+  customAccountTypes: 'pennyflow-custom-account-types',
+  hiddenAccountTypes: 'pennyflow-hidden-account-types',
+  dashOrder: 'pennyflow-dash-order',
+  overviewOrder: 'pennyflow-overview-order',
+  onboardingDone: 'finance-os-onboarding-done',
+  // Newly synced UI / feature preferences:
+  dashHidden: 'pennyflow-dash-hidden',
+  dashCompact: 'pennyflow-dash-compact',
+  pennyflowTheme: 'pennyflow-theme',
+  recentSearches: 'finance-os-recent-searches',
+  onboardingLastShown: 'finance-os-onboarding-last-shown',
+  notes: 'pennyflow-notes',
+}
+
+/**
+ * The actual localStorage keys that are synced. Exported so the auto-sync
+ * provider can detect same-tab writes to these keys and trigger a push.
+ */
+export const SYNCED_PREFERENCE_LS_KEYS: readonly string[] = Object.values(PREFERENCE_KEYS)
+
+/** Read all synced preferences from localStorage into a cloud-storable blob. */
+function buildPreferences(): Record<string, string> {
+  const prefs: Record<string, string> = {}
+  for (const [cloudKey, lsKey] of Object.entries(PREFERENCE_KEYS)) {
+    const val = localStorage.getItem(lsKey)
+    if (val !== null) prefs[cloudKey] = val
+  }
+  return prefs
+}
+
+/** Write a cloud preferences blob back into localStorage. */
+function applyPreferences(prefs: Record<string, any> | null | undefined): void {
+  if (!prefs) return
+  for (const [cloudKey, lsKey] of Object.entries(PREFERENCE_KEYS)) {
+    const val = prefs[cloudKey]
+    if (val !== undefined && val !== null && val !== '') {
+      localStorage.setItem(lsKey, String(val))
+    }
+  }
+}
 
 /**
  * SyncService — Production-safe cloud sync
@@ -43,18 +100,24 @@ export class SyncService {
   static async pushToCloud(userId: string): Promise<{ success: boolean; error?: string }> {
     if (!isSupabaseConfigured) return { success: false, error: 'Cloud sync not configured' }
     try {
-      // Safety check: don't push if local DB appears empty
-      // (prevents overwriting cloud backup with nothing)
+      // Safety check: don't push TABLE data if the local DB appears empty
+      // (prevents overwriting a good cloud backup with nothing). Preferences
+      // are still pushed below, so prefs-only changes (dashboard layout,
+      // notes, theme, ...) are backed up even on an otherwise-empty DB.
       const accountCount = await db.accounts.count()
       const transactionCount = await db.transactions.count()
+      let dataTablesEmpty = false
       if (accountCount === 0 && transactionCount === 0) {
         // Check if user has ANY data at all (goals, bills, etc.)
         const goalsCount = await db.goals.count()
         const billsCount = await db.bills.count()
-        if (goalsCount === 0 && billsCount === 0) {
-          // Truly empty — skip push to avoid wiping cloud backup
-          return { success: true }
-        }
+        dataTablesEmpty = goalsCount === 0 && billsCount === 0
+      }
+
+      if (dataTablesEmpty) {
+        // Skip table push to avoid wiping cloud backup, but still sync prefs.
+        await SyncService.pushPreferences(userId)
+        return { success: true }
       }
 
       for (const tableName of SYNC_TABLES) {
@@ -80,35 +143,32 @@ export class SyncService {
       }
 
       // Sync localStorage preferences
-      const preferences = {
-        currency: localStorage.getItem('finance-os-currency') || 'INR',
-        theme: localStorage.getItem('finance-os-theme') || 'light',
-        notifications: localStorage.getItem('finance-os-notifications') || 'true',
-        profile: localStorage.getItem('finance-os-profile') || '{}',
-        hiddenCategories: localStorage.getItem('pennyflow-hidden-categories') || '[]',
-        customAccountTypes: localStorage.getItem('pennyflow-custom-account-types') || '[]',
-        hiddenAccountTypes: localStorage.getItem('pennyflow-hidden-account-types') || '[]',
-        dashOrder: localStorage.getItem('pennyflow-dash-order') || '[]',
-        overviewOrder: localStorage.getItem('pennyflow-overview-order') || '[]',
-        onboardingDone: localStorage.getItem('finance-os-onboarding-done') || '',
-      }
-
-      await supabase
-        .from('user_data')
-        .upsert({
-          user_id: userId,
-          table_name: '_preferences',
-          data: preferences,
-          updated_at: new Date().toISOString(),
-        }, {
-          onConflict: 'user_id,table_name',
-        })
+      await SyncService.pushPreferences(userId)
 
       localStorage.setItem('pennyflow-last-sync', new Date().toISOString())
       return { success: true }
     } catch (err: any) {
       return { success: false, error: err.message || 'Unknown error' }
     }
+  }
+
+  /**
+   * Push the localStorage preference bundle to the cloud `_preferences` row.
+   * Kept separate so it can run even when data tables are empty.
+   */
+  static async pushPreferences(userId: string): Promise<void> {
+    if (!isSupabaseConfigured) return
+    const preferences = buildPreferences()
+    await supabase
+      .from('user_data')
+      .upsert({
+        user_id: userId,
+        table_name: '_preferences',
+        data: preferences,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: 'user_id,table_name',
+      })
   }
 
   /**
@@ -143,17 +203,7 @@ export class SyncService {
       // Safe to restore — local is empty
       for (const row of rows) {
         if (row.table_name === '_preferences') {
-          const prefs = row.data as any
-          if (prefs.currency) localStorage.setItem('finance-os-currency', prefs.currency)
-          if (prefs.theme) localStorage.setItem('finance-os-theme', prefs.theme)
-          if (prefs.notifications) localStorage.setItem('finance-os-notifications', prefs.notifications)
-          if (prefs.profile) localStorage.setItem('finance-os-profile', prefs.profile)
-          if (prefs.hiddenCategories) localStorage.setItem('pennyflow-hidden-categories', prefs.hiddenCategories)
-          if (prefs.customAccountTypes) localStorage.setItem('pennyflow-custom-account-types', prefs.customAccountTypes)
-          if (prefs.hiddenAccountTypes) localStorage.setItem('pennyflow-hidden-account-types', prefs.hiddenAccountTypes)
-          if (prefs.dashOrder) localStorage.setItem('pennyflow-dash-order', prefs.dashOrder)
-          if (prefs.overviewOrder) localStorage.setItem('pennyflow-overview-order', prefs.overviewOrder)
-          if (prefs.onboardingDone) localStorage.setItem('finance-os-onboarding-done', prefs.onboardingDone)
+          applyPreferences(row.data as any)
           continue
         }
 
@@ -267,17 +317,7 @@ export class SyncService {
 
       for (const row of rows) {
         if (row.table_name === '_preferences') {
-          const prefs = row.data as any
-          if (prefs.currency) localStorage.setItem('finance-os-currency', prefs.currency)
-          if (prefs.theme) localStorage.setItem('finance-os-theme', prefs.theme)
-          if (prefs.notifications) localStorage.setItem('finance-os-notifications', prefs.notifications)
-          if (prefs.profile) localStorage.setItem('finance-os-profile', prefs.profile)
-          if (prefs.hiddenCategories) localStorage.setItem('pennyflow-hidden-categories', prefs.hiddenCategories)
-          if (prefs.customAccountTypes) localStorage.setItem('pennyflow-custom-account-types', prefs.customAccountTypes)
-          if (prefs.hiddenAccountTypes) localStorage.setItem('pennyflow-hidden-account-types', prefs.hiddenAccountTypes)
-          if (prefs.dashOrder) localStorage.setItem('pennyflow-dash-order', prefs.dashOrder)
-          if (prefs.overviewOrder) localStorage.setItem('pennyflow-overview-order', prefs.overviewOrder)
-          if (prefs.onboardingDone) localStorage.setItem('finance-os-onboarding-done', prefs.onboardingDone)
+          applyPreferences(row.data as any)
           continue
         }
 

@@ -9,6 +9,10 @@ import { motion, AnimatePresence } from "framer-motion"
 export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
+  /** Extra classes for the inner value text (e.g. to change font size). */
+  triggerClassName?: string;
+  /** Optional leading icon rendered inside the trigger. */
+  icon?: React.ReactNode;
 }
 
 interface OptionData {
@@ -33,7 +37,7 @@ function extractOptions(children: React.ReactNode): OptionData[] {
 }
 
 const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, children, label, error, value, defaultValue, onChange, name, ...props }, ref) => {
+  ({ className, triggerClassName, icon, children, label, error, value, defaultValue, onChange, name, ...props }, ref) => {
     const [isOpen, setIsOpen] = useState(false)
     const [internalValue, setInternalValue] = useState<string>((defaultValue as string) ?? '')
     const triggerRef = useRef<HTMLButtonElement>(null)
@@ -148,7 +152,10 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           aria-expanded={isOpen}
           aria-haspopup="listbox"
         >
-          <span className="truncate font-medium text-[13px]">{displayLabel}</span>
+          <span className="flex items-center gap-2 min-w-0">
+            {icon}
+            <span className={cn("truncate font-medium text-[13px]", triggerClassName)}>{displayLabel}</span>
+          </span>
           <ChevronDown className={cn(
             "h-4 w-4 text-muted-foreground transition-transform duration-200 flex-shrink-0 ml-2",
             isOpen && "rotate-180"

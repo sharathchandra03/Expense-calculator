@@ -1,21 +1,20 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, generateUUID } from '@/db/schema'
+import { db } from '@/db/schema'
 import { cn } from '@/lib/utils'
-import { ChevronDown, Check, Plus, X } from 'lucide-react'
+import { ChevronDown, Check, LayoutGrid, List, Pencil, X, Search } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { sortCategories } from '@/lib/category-order'
+import { CategoryIcon } from '@/components/ui/category-icon'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { CustomCategories } from '@/components/modules/custom-categories'
+import {
+  DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES, getDefaultCategory,
+} from '@/lib/category-meta'
 
-const COLOR_OPTIONS = [
-  '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
-]
-
-const DEFAULT_EXPENSE = ['Food', 'Transport', 'Shopping', 'Entertainment', 'Utilities', 'Rent', 'Healthcare', 'Education', 'Subscriptions', 'Other']
-const DEFAULT_INCOME = ['Salary', 'Freelance', 'Investment', 'Bonus', 'Gift', 'Rental Income', 'Interest', 'Other']
-const DEFAULT_BILL = ['Utilities', 'Subscription', 'Insurance', 'Rent', 'Healthcare', 'Transport', 'Internet', 'Phone', 'Other']
+const DEFAULT_BILL = ['Utilities', 'Subscriptions', 'Insurance', 'Rent', 'Healthcare', 'Transport', 'Internet', 'Phone', 'Other']
 
 interface CategorySelectProps {
   type: 'expense' | 'income' | 'bill'
@@ -26,13 +25,20 @@ interface CategorySelectProps {
   error?: string
 }
 
+interface PickItem {
+  name: string
+  isCustom: boolean
+  icon?: string
+  color?: string
+  createdAt?: string
+}
+
 export function CategorySelect({ type, value, onChange, placeholder, className, error }: CategorySelectProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [isAdding, setIsAdding] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newColor, setNewColor] = useState(COLOR_OPTIONS[0])
+  const [layout, setLayout] = useState<'grid' | 'list'>('grid')
+  const [query, setQuery] = useState('')
+  const [managerOpen, setManagerOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   // 'bill' shares the 'expense' category pool
   const effectiveType: 'expense' | 'income' = type === 'bill' ? 'expense' : type
@@ -40,97 +46,78 @@ export function CategorySelect({ type, value, onChange, placeholder, className, 
   const customCategories = useLiveQuery(() =>
     db.customCategories.where('type').equals(effectiveType).toArray()
   ) ?? []
-
   const transactions = useLiveQuery(() => db.transactions.toArray()) ?? []
 
-  const defaults = type === 'expense' ? DEFAULT_EXPENSE : type === 'income' ? DEFAULT_INCOME : DEFAULT_BILL
+  const defaults =
+    type === 'expense' ? DEFAULT_EXPENSE_CATEGORIES
+    : type === 'income' ? DEFAULT_INCOME_CATEGORIES
+    : DEFAULT_BILL
 
-  // Usage count per category name (most-used bubbles to the top)
-  const usageCount = React.useMemo(() => {
+  const usageCount = useMemo(() => {
     const map: Record<string, number> = {}
     const list = Array.isArray(transactions) ? transactions : []
-    list.forEach((tx) => {
-      if (tx?.category) map[tx.category] = (map[tx.category] || 0) + 1
-    })
+    list.forEach((tx) => { if (tx?.category) map[tx.category] = (map[tx.category] || 0) + 1 })
     return map
   }, [transactions])
 
-  // Get hidden categories from localStorage
-  const hiddenDefaults = React.useMemo(() => {
+  const hiddenDefaults = useMemo(() => {
     if (typeof window === 'undefined') return [] as string[]
     try {
       const stored = localStorage.getItem('pennyflow-hidden-categories')
       if (stored) return JSON.parse(stored) as string[]
     } catch {}
     return [] as string[]
-  }, [isOpen]) // recalculate when dropdown opens
+    // Recompute when the dropdown or manager opens so hidden-category edits reflect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, managerOpen])
 
-  const allCategories = React.useMemo(() => {
-    const customNames = customCategories.map(c => c.name.toLowerCase())
-    const result: { name: string; color?: string; isCustom: boolean; createdAt?: string }[] = []
-    defaults.forEach(name => {
+  const allCategories = useMemo<PickItem[]>(() => {
+    const customNames = customCategories.map((c) => c.name.toLowerCase())
+    const result: PickItem[] = []
+    defaults.forEach((name) => {
       if (!customNames.includes(name.toLowerCase()) && !hiddenDefaults.includes(name)) {
-        result.push({ name, color: undefined, isCustom: false })
+        result.push({ name, isCustom: false })
       }
     })
-    customCategories.forEach(c => {
-      result.push({ name: c.name, color: c.color, isCustom: true, createdAt: c.createdAt })
+    customCategories.forEach((c) => {
+      result.push({ name: c.name, icon: c.icon, color: c.color, isCustom: true, createdAt: c.createdAt })
     })
-    // Order: manual reorder (synced with Categories screen) -> most used -> recently added
     return sortCategories(result, effectiveType, usageCount)
   }, [defaults, customCategories, hiddenDefaults, effectiveType, usageCount])
 
-  const selectedCat = allCategories.find(c => c.name === value)
+  // Apply a sensible default selection when none is chosen yet.
+  useEffect(() => {
+    if (value || allCategories.length === 0) return
+    const preferred = getDefaultCategory(effectiveType)
+    if (preferred && allCategories.some((c) => c.name === preferred)) {
+      onChange(preferred)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allCategories.length])
 
-  // Close on click outside
+  const filtered = useMemo(() => {
+    if (!query.trim()) return allCategories
+    const q = query.toLowerCase()
+    return allCategories.filter((c) => c.name.toLowerCase().includes(q))
+  }, [allCategories, query])
+
+  const selectedCat = allCategories.find((c) => c.name === value)
+
   useEffect(() => {
     if (!isOpen) return
     const handle = (e: MouseEvent) => {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
         setIsOpen(false)
-        setIsAdding(false)
       }
     }
     document.addEventListener('mousedown', handle, true)
     return () => document.removeEventListener('mousedown', handle, true)
   }, [isOpen])
 
-  useEffect(() => {
-    if (isAdding && inputRef.current) {
-      setTimeout(() => inputRef.current?.focus(), 50)
-    }
-  }, [isAdding])
-
   const handleSelect = (name: string) => {
     onChange(name)
     setIsOpen(false)
-    setIsAdding(false)
-  }
-
-  const handleAdd = async () => {
-    const name = newName.trim()
-    if (!name) return
-    const exists = allCategories.find(c => c.name.toLowerCase() === name.toLowerCase())
-    if (exists) {
-      handleSelect(exists.name)
-      setNewName('')
-      return
-    }
-    try {
-      await db.customCategories.add({
-        id: generateUUID(),
-        name,
-        type: type === 'bill' ? 'expense' : type,
-        color: newColor,
-        createdAt: new Date().toISOString(),
-      })
-      handleSelect(name)
-      setNewName('')
-      setNewColor(COLOR_OPTIONS[0])
-      setIsAdding(false)
-    } catch (err) {
-      console.error('Error adding category:', err)
-    }
+    setQuery('')
   }
 
   return (
@@ -140,25 +127,35 @@ export function CategorySelect({ type, value, onChange, placeholder, className, 
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "flex h-11 w-full items-center justify-between rounded-2xl border border-border/70 bg-secondary px-4 py-2 text-sm transition-all",
-          "focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring/80",
-          isOpen && "ring-1 ring-ring border-ring/80",
-          error && "border-destructive focus:ring-destructive",
-          !value && "text-muted-foreground",
-          value && "text-foreground",
+          'flex h-11 w-full items-center justify-between rounded-2xl border border-border/70 bg-secondary px-4 py-2 text-sm transition-all',
+          'focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring/80',
+          isOpen && 'ring-1 ring-ring border-ring/80',
+          error && 'border-destructive focus:ring-destructive',
+          !value && 'text-muted-foreground',
+          value && 'text-foreground',
           className
         )}
       >
-        <div className="flex items-center gap-2 truncate">
-          {selectedCat?.color && <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: selectedCat.color }} />}
+        <div className="flex items-center gap-2.5 truncate">
+          {value && (
+            <CategoryIcon
+              name={value}
+              type={effectiveType}
+              isCustom={selectedCat?.isCustom}
+              icon={selectedCat?.icon}
+              color={selectedCat?.color}
+              size={26}
+              iconSize={14}
+            />
+          )}
           <span className="truncate font-medium text-[13px]">{value || placeholder || 'Select Category'}</span>
         </div>
-        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform duration-200 flex-shrink-0 ml-2", isOpen && "rotate-180")} />
+        <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform duration-200 flex-shrink-0 ml-2', isOpen && 'rotate-180')} />
       </button>
 
       {error && <span className="text-xs text-destructive px-1 mt-1 block">{error}</span>}
 
-      {/* Dropdown - inline flow, pushes content down */}
+      {/* Dropdown */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -168,80 +165,110 @@ export function CategorySelect({ type, value, onChange, placeholder, className, 
             transition={{ duration: 0.15 }}
             className="mt-1 rounded-2xl border border-border/60 bg-card shadow-lg overflow-hidden"
           >
-            <div className="max-h-[240px] overflow-y-auto p-1.5">
-              {allCategories.map((cat) => (
-                <button
-                  key={cat.name}
-                  type="button"
-                  onClick={() => handleSelect(cat.name)}
-                  className={cn(
-                    "flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-[13px] font-medium transition-colors",
-                    cat.name === value
-                      ? "bg-primary/10 text-primary"
-                      : "text-foreground hover:bg-secondary/80 active:bg-secondary"
-                  )}
-                >
-                  <div className="flex items-center gap-2.5">
-                    {cat.color && <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />}
-                    <span>{cat.name}</span>
-                  </div>
-                  {cat.name === value && <Check className="h-4 w-4 text-primary flex-shrink-0" />}
-                </button>
-              ))}
-            </div>
-
-            {/* Add new section */}
-            <div className="border-t border-border/40 p-1.5">
-              {!isAdding ? (
-                <button
-                  type="button"
-                  onClick={() => setIsAdding(true)}
-                  className="flex w-full items-center gap-2 rounded-xl px-3.5 py-2.5 text-[13px] font-medium text-primary hover:bg-primary/5"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Add new category</span>
-                </button>
-              ) : (
-                <div className="px-2 py-2 space-y-2.5">
-                  <div className="flex items-center gap-2">
-                    <input
-                      ref={inputRef}
-                      type="text"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAdd() } }}
-                      placeholder="Category name"
-                      className="flex-1 h-9 px-3 rounded-xl border border-border/70 bg-secondary text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                    />
-                    <button type="button" onClick={() => { setIsAdding(false); setNewName('') }} className="p-2 rounded-lg hover:bg-secondary text-muted-foreground">
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {COLOR_OPTIONS.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        onClick={() => setNewColor(color)}
-                        className={cn('w-6 h-6 rounded-full transition-transform', newColor === color ? 'ring-2 ring-offset-1 ring-offset-background ring-foreground scale-110' : '')}
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
-                  </div>
+            {/* Toolbar: title, grid/list toggle, edit */}
+            <div className="flex items-center justify-between px-3 pt-3 pb-2">
+              <span className="text-[13px] font-bold text-foreground">Select Category</span>
+              <div className="flex items-center gap-2">
+                <div className="flex gap-0.5 p-0.5 rounded-full bg-secondary/80">
                   <button
                     type="button"
-                    onClick={handleAdd}
-                    disabled={!newName.trim()}
-                    className="w-full h-9 rounded-xl bg-primary text-primary-foreground text-xs font-semibold uppercase tracking-wider disabled:opacity-50"
+                    onClick={() => setLayout('grid')}
+                    className={cn('p-1.5 rounded-full transition-colors', layout === 'grid' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground')}
+                    aria-label="Grid view"
                   >
-                    Add Category
+                    <LayoutGrid className="w-3.5 h-3.5" />
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setLayout('list')}
+                    className={cn('p-1.5 rounded-full transition-colors', layout === 'list' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground')}
+                    aria-label="List view"
+                  >
+                    <List className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setManagerOpen(true); setIsOpen(false) }}
+                  className="p-1.5 rounded-full bg-secondary/80 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Edit categories"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Search (list mode) */}
+            {layout === 'list' && (
+              <div className="px-3 pb-2">
+                <div className="flex items-center gap-2 h-9 px-3 rounded-xl bg-secondary/70 border border-border/50">
+                  <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search categories"
+                    className="flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+                  />
+                  {query && (
+                    <button type="button" onClick={() => setQuery('')} className="text-muted-foreground">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Items */}
+            <div className="max-h-[300px] overflow-y-auto p-3 pt-1">
+              {filtered.length === 0 ? (
+                <p className="text-[12px] text-muted-foreground/60 text-center py-6">No categories found.</p>
+              ) : layout === 'grid' ? (
+                <div className="grid grid-cols-4 gap-2">
+                  {filtered.map((cat) => (
+                    <button
+                      key={cat.name}
+                      type="button"
+                      onClick={() => handleSelect(cat.name)}
+                      className={cn(
+                        'flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl transition-colors',
+                        cat.name === value ? 'bg-primary/10' : 'hover:bg-secondary/70'
+                      )}
+                    >
+                      <CategoryIcon name={cat.name} type={effectiveType} isCustom={cat.isCustom} icon={cat.icon} color={cat.color} size={40} />
+                      <span className="text-[10px] font-medium text-foreground text-center leading-tight line-clamp-2">{cat.name}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {filtered.map((cat) => (
+                    <button
+                      key={cat.name}
+                      type="button"
+                      onClick={() => handleSelect(cat.name)}
+                      className={cn(
+                        'flex items-center gap-3 px-2.5 py-2.5 rounded-xl transition-colors',
+                        cat.name === value ? 'bg-primary/10' : 'hover:bg-secondary/70'
+                      )}
+                    >
+                      <CategoryIcon name={cat.name} type={effectiveType} isCustom={cat.isCustom} icon={cat.icon} color={cat.color} size={34} iconSize={18} />
+                      <span className="flex-1 text-left text-[13px] font-medium text-foreground">{cat.name}</span>
+                      {cat.name === value && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Full category manager overlay (opened via the pencil) */}
+      <Dialog open={managerOpen} onOpenChange={setManagerOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto p-5 rounded-t-3xl rounded-b-none sm:rounded-3xl">
+          <CustomCategories />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -3,572 +3,698 @@
 import React, { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/schema'
-import { formatCurrency } from '@/lib/utils'
-import { cn } from '@/lib/utils'
+import { formatCurrency, cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
-import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area } from 'recharts'
-import { TrendingUp, ArrowUpRight, ArrowDownRight, Wallet, Target, Heart, PieChart, BarChart3, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
-import { getConfigValue } from '@/lib/app-config'
+import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
+import { ChevronLeft, ChevronRight, Download, Pencil } from 'lucide-react'
+import { getCategoryConfig, CHART_COLORS } from '@/lib/category-icons'
 
-type ViewMode = 'month' | 'overall'
-type ChartType = 'bar' | 'line' | 'pie'
+/* ------------------------------------------------------------------ *
+ * Types & constants
+ * ------------------------------------------------------------------ */
+type Period = 'week' | 'month' | 'year' | 'custom'
+type CatMode = 'spending' | 'income'
+type PayMode = 'spending' | 'income' | 'transfers'
 
-const PIE_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16']
+const DONUT_COLORS = CHART_COLORS
 
+/* Renders a percentage label at the radial midpoint of each slice, so the
+ * figure sits *inside* the donut ring (never clipped at the chart edge).
+ * Slices smaller than 3% are skipped to avoid clutter; the exact figure for
+ * every category is always shown in the ranked list below the donut. */
+const renderDonutLabel = (props: {
+  cx: number
+  cy: number
+  midAngle: number
+  innerRadius: number
+  outerRadius: number
+  percent: number
+}) => {
+  const { cx, cy, midAngle, innerRadius, outerRadius, percent } = props
+  if (percent * 100 < 3) return null
+  const RAD = Math.PI / 180
+  const radius = innerRadius + (outerRadius - innerRadius) / 2
+  const x = cx + radius * Math.cos(-midAngle * RAD)
+  const y = cy + radius * Math.sin(-midAngle * RAD)
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="#ffffff"
+      textAnchor="middle"
+      dominantBaseline="central"
+      fontSize={11}
+      fontWeight={700}
+    >
+      {`${(percent * 100).toFixed(1)}%`}
+    </text>
+  )
+}
+
+const toYMD = (d: Date) => {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+const startOfWeek = (d: Date) => {
+  const x = new Date(d)
+  const day = (x.getDay() + 6) % 7 // Monday = 0
+  x.setDate(x.getDate() - day)
+  x.setHours(0, 0, 0, 0)
+  return x
+}
+
+/* ------------------------------------------------------------------ *
+ * Component
+ * ------------------------------------------------------------------ */
 export function Analytics() {
-  const defaultView = getConfigValue('analyticsDefaultView')
-  const [viewMode, setViewMode] = useState<ViewMode>(defaultView === 'overall' ? 'overall' : 'month')
-  const [selectedMonth, setSelectedMonth] = useState(() => {
+  const [period, setPeriod] = useState<Period>('month')
+  const [anchor, setAnchor] = useState(() => new Date())
+  const [customRange, setCustomRange] = useState(() => {
     const now = new Date()
-    return { month: now.getMonth(), year: now.getFullYear() }
+    const start = new Date(now.getFullYear(), now.getMonth(), 1)
+    return { start: toYMD(start), end: toYMD(now) }
   })
-  const [chartType, setChartType] = useState<ChartType>('pie')
+  const [catMode, setCatMode] = useState<CatMode>('spending')
+  const [payMode, setPayMode] = useState<PayMode>('spending')
 
   const transactions = useLiveQuery(() => db.transactions.toArray()) ?? []
-  const lending = useLiveQuery(() => db.lending.toArray()) ?? []
-  const assets = useLiveQuery(() => db.assets.toArray()) ?? []
-  const goals = useLiveQuery(() => db.goals.toArray()) ?? []
-  const investments = useLiveQuery(() => db.investments.toArray()) ?? []
-  const bills = useLiveQuery(() => db.bills.toArray()) ?? []
+  const accounts = useLiveQuery(() => db.accounts.toArray()) ?? []
+  const budgets = useLiveQuery(() => db.budgets.toArray()) ?? []
 
   const safeTx = Array.isArray(transactions) ? transactions : []
-  const safeLending = Array.isArray(lending) ? lending : []
-  const safeAssets = Array.isArray(assets) ? assets : []
-  const safeGoals = Array.isArray(goals) ? goals : []
-  const safeInvestments = Array.isArray(investments) ? investments : []
-  const safeBills = Array.isArray(bills) ? bills : []
+  const safeAccounts = Array.isArray(accounts) ? accounts : []
+  const safeBudgets = Array.isArray(budgets) ? budgets : []
 
-  // Month navigation
-  const goToPrevMonth = () => {
-    setSelectedMonth(prev => prev.month === 0 ? { month: 11, year: prev.year - 1 } : { month: prev.month - 1, year: prev.year })
-  }
-  const goToNextMonth = () => {
-    setSelectedMonth(prev => prev.month === 11 ? { month: 0, year: prev.year + 1 } : { month: prev.month + 1, year: prev.year })
-  }
-  const monthLabel = new Date(selectedMonth.year, selectedMonth.month).toLocaleString('en-US', { month: 'long', year: 'numeric' })
-
-  // Filter transactions based on view mode
-  const periodTx = React.useMemo(() => {
-    if (viewMode === 'overall') return safeTx
-    const start = new Date(selectedMonth.year, selectedMonth.month, 1)
-    const end = new Date(selectedMonth.year, selectedMonth.month + 1, 0, 23, 59, 59)
-    return safeTx.filter(tx => {
-      const txDate = new Date(tx.date)
-      return txDate >= start && txDate <= end
-    })
-  }, [safeTx, viewMode, selectedMonth])
-
-  // Income & Expense analysis
-  const analysis = React.useMemo(() => {
-    const income = periodTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-    const expense = periodTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-    const savings = income - expense
-    const savingsRate = income > 0 ? Math.round((savings / income) * 100) : 0
-
-    const expCatMap: Record<string, number> = {}
-    periodTx.filter(t => t.type === 'expense').forEach(t => {
-      expCatMap[t.category] = (expCatMap[t.category] || 0) + t.amount
-    })
-    const expenseCategories = Object.entries(expCatMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
-
-    const incCatMap: Record<string, number> = {}
-    periodTx.filter(t => t.type === 'income').forEach(t => {
-      incCatMap[t.category] = (incCatMap[t.category] || 0) + t.amount
-    })
-    const incomeCategories = Object.entries(incCatMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
-
-    return { income, expense, savings, savingsRate, expenseCategories, incomeCategories }
-  }, [periodTx])
-
-  // Monthly bar chart data (last 6 months or all months in overall)
-  const monthlyBarData = React.useMemo(() => {
-    const months: { month: string; income: number; expense: number }[] = []
-    const count = viewMode === 'overall' ? 12 : 6
-    const refDate = viewMode === 'month' ? new Date(selectedMonth.year, selectedMonth.month, 1) : new Date()
-    for (let i = count - 1; i >= 0; i--) {
-      const d = new Date(refDate.getFullYear(), refDate.getMonth() - i, 1)
-      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-      const monthTx = safeTx.filter(tx => {
-        const txd = new Date(tx.date)
-        return txd >= d && txd <= monthEnd
-      })
-      const income = monthTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-      const expense = monthTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-      months.push({ month: d.toLocaleString('en-US', { month: 'short' }), income, expense })
+  /* ---- Date range for the selected period ---- */
+  const range = React.useMemo(() => {
+    if (period === 'week') {
+      const start = startOfWeek(anchor)
+      const end = new Date(start)
+      end.setDate(start.getDate() + 6)
+      end.setHours(23, 59, 59, 999)
+      return { start, end }
     }
-    return months
-  }, [safeTx, viewMode, selectedMonth])
+    if (period === 'year') {
+      const start = new Date(anchor.getFullYear(), 0, 1)
+      const end = new Date(anchor.getFullYear(), 11, 31, 23, 59, 59, 999)
+      return { start, end }
+    }
+    if (period === 'custom') {
+      const start = new Date(customRange.start + 'T00:00:00')
+      const end = new Date(customRange.end + 'T23:59:59')
+      return { start, end }
+    }
+    // month
+    const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
+    const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0, 23, 59, 59, 999)
+    return { start, end }
+  }, [period, anchor, customRange])
 
-  // Investment analysis
-  const investmentAnalysis = React.useMemo(() => {
-    const totalInvested = safeInvestments.reduce((s, inv) => s + (inv.buyPrice * inv.quantity), 0)
-    const currentValue = safeInvestments.reduce((s, inv) => s + (inv.currentValue || 0), 0)
-    const assetEquity = safeAssets.reduce((s, a) => s + a.balance, 0)
-    const gainLoss = currentValue - totalInvested
-    const returnPct = totalInvested > 0 ? Math.round((gainLoss / totalInvested) * 100) : 0
-    return { totalInvested, currentValue, assetEquity, gainLoss, returnPct }
-  }, [safeInvestments, safeAssets])
+  /* ---- Navigation ---- */
+  const navigate = (dir: -1 | 1) => {
+    setAnchor(prev => {
+      const d = new Date(prev)
+      if (period === 'week') d.setDate(d.getDate() + dir * 7)
+      else if (period === 'year') d.setFullYear(d.getFullYear() + dir)
+      else d.setMonth(d.getMonth() + dir) // month
+      return d
+    })
+  }
 
-  // Lending analysis
-  const lendingAnalysis = React.useMemo(() => {
-    const activeLent = safeLending.filter(l => l.type === 'lent' && l.status === 'active')
-    const activeBorrowed = safeLending.filter(l => l.type === 'borrowed' && l.status === 'active')
-    const totalLent = activeLent.reduce((s, l) => s + l.amount, 0)
-    const totalBorrowed = activeBorrowed.reduce((s, l) => s + l.amount, 0)
-    const netLending = totalLent - totalBorrowed
-    return { totalLent, totalBorrowed, netLending, lentCount: activeLent.length, borrowedCount: activeBorrowed.length }
-  }, [safeLending])
+  const rangeLabel = React.useMemo(() => {
+    if (period === 'week') {
+      const s = range.start
+      const e = range.end
+      const sameMonth = s.getMonth() === e.getMonth()
+      const sFmt = s.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+      const eFmt = e.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+      return sameMonth ? `${s.getDate()} – ${eFmt}` : `${sFmt} – ${eFmt}`
+    }
+    if (period === 'year') return String(anchor.getFullYear())
+    if (period === 'custom') {
+      const s = new Date(customRange.start + 'T00:00:00')
+      const e = new Date(customRange.end + 'T00:00:00')
+      return `${s.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })} – ${e.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`
+    }
+    return anchor.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+  }, [period, anchor, range, customRange])
 
-  // Goals & Bills analysis
-  const goalsAnalysis = React.useMemo(() => {
-    const totalTarget = safeGoals.reduce((s, g) => s + g.targetAmount, 0)
-    const totalSaved = safeGoals.reduce((s, g) => s + g.currentAmount, 0)
-    const overallProgress = totalTarget > 0 ? Math.round((totalSaved / totalTarget) * 100) : 0
-    return { totalTarget, totalSaved, overallProgress, activeGoals: safeGoals.length }
-  }, [safeGoals])
+  /* ---- Transactions within the range ---- */
+  const periodTx = React.useMemo(() => {
+    return safeTx.filter(tx => {
+      const d = new Date(tx.date + 'T00:00:00')
+      return d >= range.start && d <= range.end
+    })
+  }, [safeTx, range])
 
-  const billsAnalysis = React.useMemo(() => {
-    const unpaidBills = safeBills.filter(b => !b.isPaid)
-    const totalUnpaid = unpaidBills.reduce((s, b) => s + b.amount, 0)
-    return { totalUnpaid, unpaidCount: unpaidBills.length }
-  }, [safeBills])
+  const spendingTx = periodTx.filter(t => t.type === 'expense')
+  const incomeTx = periodTx.filter(t => t.type === 'income')
 
-  // Net worth composition
-  const netWorthComposition = React.useMemo(() => {
-    const data: { name: string; value: number }[] = []
-    const cash = safeAssets.filter(a => a.type === 'cash' || a.type === 'bank').reduce((s, a) => s + a.balance, 0)
-    const stocks = safeAssets.filter(a => a.type === 'stock').reduce((s, a) => s + a.balance, 0) + safeInvestments.reduce((s, i) => s + (i.currentValue || 0), 0)
-    const crypto = safeAssets.filter(a => a.type === 'crypto').reduce((s, a) => s + a.balance, 0)
-    const realEstate = safeAssets.filter(a => a.type === 'real_estate').reduce((s, a) => s + a.balance, 0)
-    const gold = safeAssets.filter(a => a.type === 'gold').reduce((s, a) => s + a.balance, 0)
-    if (cash > 0) data.push({ name: 'Cash & Bank', value: cash })
-    if (stocks > 0) data.push({ name: 'Stocks & Funds', value: stocks })
-    if (crypto > 0) data.push({ name: 'Crypto', value: crypto })
-    if (realEstate > 0) data.push({ name: 'Real Estate', value: realEstate })
-    if (gold > 0) data.push({ name: 'Gold', value: gold })
-    if (lendingAnalysis.totalLent > 0) data.push({ name: 'Lent Out', value: lendingAnalysis.totalLent })
-    return data
-  }, [safeAssets, safeInvestments, lendingAnalysis.totalLent])
+  /* ---- Summary ---- */
+  const summary = React.useMemo(() => {
+    const spending = spendingTx.reduce((s, t) => s + t.amount, 0)
+    const income = incomeTx.reduce((s, t) => s + t.amount, 0)
+    return { spending, income, net: income - spending }
+  }, [spendingTx, incomeTx])
 
-  const totalNetWorth = netWorthComposition.reduce((s, d) => s + d.value, 0)
+  /* ---- Days in the selected range (for per-day averages) ---- */
+  const daysInRange = React.useMemo(() => {
+    const ms = range.end.getTime() - range.start.getTime()
+    return Math.max(1, Math.round(ms / 86_400_000) + 1)
+  }, [range])
 
-  const periodLabel = viewMode === 'overall' ? 'All Time' : monthLabel
+  /* ---- Budget (matches the selected period where possible) ---- */
+  const budgetData = React.useMemo(() => {
+    const periodForBudget = period === 'week' ? 'weekly' : period === 'year' ? 'yearly' : 'monthly'
+    const active = safeBudgets.filter(b => b.isActive && b.period === periodForBudget)
+    const limit = active.reduce((s, b) => s + b.limit, 0)
+    const spent = summary.spending
+    const remaining = limit - spent
+    const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0
+    // Days left within the current range (for "safe to spend")
+    const now = new Date()
+    const endForSafe = range.end < now ? range.end : range.end
+    const daysLeft = Math.max(1, Math.round((endForSafe.getTime() - Math.max(now.getTime(), range.start.getTime())) / 86_400_000) + 1)
+    const safePerDay = remaining > 0 ? remaining / daysLeft : 0
+    return { limit, spent, remaining, pct, daysLeft, safePerDay, hasBudget: active.length > 0 }
+  }, [safeBudgets, summary.spending, period, range])
+
+  /* ---- Categories (donut + ranked list) ---- */
+  const categoryData = React.useMemo(() => {
+    const src = catMode === 'spending' ? spendingTx : incomeTx
+    const total = src.reduce((s, t) => s + t.amount, 0)
+    const map: Record<string, number> = {}
+    src.forEach(t => { map[t.category] = (map[t.category] || 0) + t.amount })
+    const list = Object.entries(map)
+      .map(([name, value]) => ({ name, value, pct: total > 0 ? (value / total) * 100 : 0 }))
+      .sort((a, b) => b.value - a.value)
+    return { list, total }
+  }, [spendingTx, incomeTx, catMode])
+
+  /* ---- Payment modes ---- */
+  const paymentData = React.useMemo(() => {
+    let src = periodTx
+    if (payMode === 'spending') src = periodTx.filter(t => t.type === 'expense' && t.category !== 'Transfer')
+    else if (payMode === 'income') src = periodTx.filter(t => t.type === 'income' && t.category !== 'Transfer')
+    else src = periodTx.filter(t => t.category === 'Transfer')
+
+    const map: Record<string, number> = {}
+    src.forEach(t => {
+      const acct = safeAccounts.find(a => a.id === t.accountId)
+      const name = acct?.name || 'Cash'
+      map[name] = (map[name] || 0) + t.amount
+    })
+    return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
+  }, [periodTx, payMode, safeAccounts])
+
+  /* ---- Stats (averages recompute per period) ---- */
+  const stats = React.useMemo(() => {
+    const spendPerDay = summary.spending / daysInRange
+    const spendPerTx = spendingTx.length > 0 ? summary.spending / spendingTx.length : 0
+    const incomePerDay = summary.income / daysInRange
+    const incomePerTx = incomeTx.length > 0 ? summary.income / incomeTx.length : 0
+    return { spendPerDay, spendPerTx, incomePerDay, incomePerTx }
+  }, [summary, daysInRange, spendingTx.length, incomeTx.length])
+
+  /* ---- CSV export of the current period ---- */
+  const exportCsv = () => {
+    const rows = [['Date', 'Type', 'Category', 'Amount', 'Account', 'Description']]
+    periodTx
+      .slice()
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .forEach(t => {
+        const acct = safeAccounts.find(a => a.id === t.accountId)
+        rows.push([t.date, t.type, t.category, String(t.amount), acct?.name || '', (t.description || '').replace(/,/g, ' ')])
+      })
+    const csv = rows.map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `analysis-${rangeLabel.replace(/\s+/g, '-').toLowerCase()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const PERIODS: { key: Period; label: string }[] = [
+    { key: 'week', label: 'Week' },
+    { key: 'month', label: 'Month' },
+    { key: 'year', label: 'Year' },
+    { key: 'custom', label: 'Custom' },
+  ]
 
   return (
-    <div className="flex flex-col space-y-5 pb-6">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Analytics</h1>
-        <p className="text-xs text-muted-foreground">Financial analysis for {periodLabel}.</p>
-      </div>
-
-      {/* View mode toggle: Month / Overall */}
-      <div className="flex gap-1 p-1 rounded-full bg-secondary/60 w-full max-w-xs mx-auto">
+    <div className="flex flex-col space-y-5 pb-8">
+      {/* ===== Header ===== */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Analysis</h1>
         <button
-          onClick={() => setViewMode('month')}
-          className={cn(
-            'flex-1 px-4 py-1.5 rounded-full text-[11px] font-semibold transition-all',
-            viewMode === 'month' ? 'bg-foreground text-background' : 'text-muted-foreground'
-          )}
+          onClick={exportCsv}
+          className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-foreground hover:bg-secondary/70 transition-colors"
+          aria-label="Export this period as CSV"
         >
-          Monthly
-        </button>
-        <button
-          onClick={() => setViewMode('overall')}
-          className={cn(
-            'flex-1 px-4 py-1.5 rounded-full text-[11px] font-semibold transition-all',
-            viewMode === 'overall' ? 'bg-foreground text-background' : 'text-muted-foreground'
-          )}
-        >
-          Overall
+          <Download className="w-[18px] h-[18px]" strokeWidth={2.2} />
         </button>
       </div>
 
-      {/* Month picker (only visible in month mode) */}
-      {viewMode === 'month' && (
-        <motion.div
-          initial={{ opacity: 0, y: -5 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between px-2"
-        >
-          <button onClick={goToPrevMonth} className="w-9 h-9 rounded-full bg-secondary/60 flex items-center justify-center hover:bg-secondary transition-colors">
-            <ChevronLeft className="w-4 h-4 text-foreground" />
-          </button>
-          <div className="flex items-center gap-2">
-            <CalendarDays className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm font-semibold text-foreground">{monthLabel}</span>
-          </div>
-          <button onClick={goToNextMonth} className="w-9 h-9 rounded-full bg-secondary/60 flex items-center justify-center hover:bg-secondary transition-colors">
-            <ChevronRight className="w-4 h-4 text-foreground" />
-          </button>
-        </motion.div>
-      )}
-
-      {/* Income vs Expense Summary */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-4">
-          <ArrowUpRight className="w-5 h-5 text-emerald-500 mb-2" />
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Income</p>
-          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{formatCurrency(analysis.income)}</p>
-        </div>
-        <div className="rounded-2xl bg-red-500/10 border border-red-500/20 p-4">
-          <ArrowDownRight className="w-5 h-5 text-red-500 mb-2" />
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Expenses</p>
-          <p className="text-lg font-bold text-red-600 dark:text-red-400 mt-0.5">{formatCurrency(analysis.expense)}</p>
-        </div>
-      </div>
-
-      {/* Savings rate bar */}
-      <div className="rounded-2xl bg-card border border-border/50 p-4">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-xs font-semibold">Net Savings</span>
-          <span className={cn("text-sm font-bold", analysis.savings >= 0 ? 'text-emerald-500' : 'text-red-500')}>
-            {analysis.savings >= 0 ? '+' : ''}{formatCurrency(analysis.savings)}
-          </span>
-        </div>
-        <div className="h-2 rounded-full bg-secondary/60 overflow-hidden">
-          <div
-            className={cn("h-full rounded-full transition-all", analysis.savings >= 0 ? 'bg-emerald-500' : 'bg-red-500')}
-            style={{ width: `${Math.min(100, Math.abs(analysis.savingsRate))}%` }}
-          />
-        </div>
-        <p className="text-[10px] text-muted-foreground mt-1.5">{analysis.savingsRate}% savings rate</p>
-      </div>
-
-      {/* Category-wise Expense Chart */}
-      {analysis.expenseCategories.length > 0 && (
-        <div className="rounded-3xl bg-card border border-border/50 p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-primary" />
-              <h3 className="text-sm font-bold">Expense by Category</h3>
-            </div>
-            <div className="flex gap-0.5 p-0.5 rounded-lg bg-secondary/60">
-              {([
-                { key: 'pie', label: '\u25D1' },
-                { key: 'line', label: '\u27CB' },
-                { key: 'bar', label: '|||' },
-              ] as { key: ChartType; label: string }[]).map((t) => (
-                <button
-                  key={t.key}
-                  onClick={() => setChartType(t.key)}
-                  className={cn(
-                    'px-2.5 py-1 rounded-md text-[10px] font-bold transition-all',
-                    chartType === t.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="h-56 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              {chartType === 'pie' ? (
-                <RechartsPie>
-                  <Pie
-                    data={analysis.expenseCategories}
-                    cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="value" nameKey="name" animationDuration={600}
-                  >
-                    {analysis.expenseCategories.map((_, idx) => (
-                      <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', padding: '10px 14px' }}
-                    itemStyle={{ color: '#f5f5f7' }}
-                    labelStyle={{ color: '#a0a0b0', fontSize: '10px', marginBottom: '4px' }}
-                    formatter={(value: number, name: string) => {
-                      const pct = analysis.expense > 0 ? ((value / analysis.expense) * 100).toFixed(1) : '0'
-                      return [`${formatCurrency(value)} (${pct}%)`, name]
-                    }}
-                  />
-                </RechartsPie>
-              ) : chartType === 'line' ? (
-                <AreaChart data={monthlyBarData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.1)" />
-                  <XAxis dataKey="month" fontSize={10} stroke="#888" tickLine={false} axisLine={false} />
-                  <YAxis fontSize={9} stroke="#888" tickLine={false} axisLine={false} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
-                  <Tooltip
-                    contentStyle={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '11px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', padding: '8px 12px' }}
-                    itemStyle={{ color: '#f5f5f7' }}
-                    labelStyle={{ color: '#a0a0b0', fontSize: '10px', marginBottom: '4px' }}
-                    formatter={(value: number, name: string) => [formatCurrency(value), name === 'income' ? 'Income' : 'Expense']}
-                  />
-                  <Area type="monotone" dataKey="expense" stroke="#ef4444" fill="#ef4444" fillOpacity={0.12} strokeWidth={2} />
-                  <Area type="monotone" dataKey="income" stroke="#10b981" fill="#10b981" fillOpacity={0.12} strokeWidth={2} />
-                </AreaChart>
-              ) : (
-                <BarChart data={analysis.expenseCategories.slice(0, 8)} margin={{ top: 5, right: 5, left: -10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.1)" />
-                  <XAxis dataKey="name" fontSize={9} stroke="#888" tickLine={false} axisLine={false} interval={0} angle={-20} textAnchor="end" height={40} />
-                  <YAxis fontSize={9} stroke="#888" tickLine={false} axisLine={false} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
-                  <Tooltip
-                    contentStyle={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '11px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', padding: '8px 12px' }}
-                    itemStyle={{ color: '#f5f5f7' }}
-                    labelStyle={{ color: '#a0a0b0', fontSize: '10px', marginBottom: '4px' }}
-                    formatter={(value: number) => [formatCurrency(value), 'Amount']}
-                  />
-                  <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                    {analysis.expenseCategories.slice(0, 8).map((_, idx) => (
-                      <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
+      {/* ===== Period selector ===== */}
+      <div className="grid grid-cols-4 gap-1 p-1.5 rounded-full bg-secondary/70">
+        {PERIODS.map(p => {
+          const active = period === p.key
+          return (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              className={cn(
+                'relative h-9 rounded-full text-[13px] font-bold transition-colors',
+                active ? 'text-foreground' : 'text-muted-foreground'
               )}
-            </ResponsiveContainer>
-          </div>
-
-          {/* Legend for pie */}
-          {chartType === 'pie' && (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 pt-1">
-              {analysis.expenseCategories.map((cat, idx) => {
-                const pct = analysis.expense > 0 ? ((cat.value / analysis.expense) * 100).toFixed(1) : '0'
-                return (
-                  <div key={cat.name} className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }} />
-                    <span className="text-[11px] font-medium text-foreground truncate">{cat.name}</span>
-                    <span className="text-[10px] text-muted-foreground ml-auto flex-shrink-0">{pct}%</span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-          {chartType === 'line' && (
-            <div className="flex items-center justify-center gap-5 text-[10px]">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                <span className="text-muted-foreground">Income</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
-                <span className="text-muted-foreground">Expense</span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Net Worth Composition Pie */}
-      {netWorthComposition.length > 0 && (
-        <div className="rounded-3xl bg-card border border-border/50 p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <PieChart className="w-4 h-4 text-primary" />
-            <h3 className="text-sm font-bold">Net Worth Composition</h3>
-          </div>
-          <div className="h-48 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <RechartsPie>
-                <Pie data={netWorthComposition} cx="50%" cy="50%" innerRadius={40} outerRadius={72} paddingAngle={3} dataKey="value" animationDuration={600}>
-                  {netWorthComposition.map((_, idx) => (
-                    <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '11px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', padding: '8px 12px' }}
-                  itemStyle={{ color: '#f5f5f7' }}
-                  labelStyle={{ color: '#a0a0b0', fontSize: '10px' }}
-                  formatter={(value: number) => [formatCurrency(value), '']}
+            >
+              {active && (
+                <motion.span
+                  layoutId="period-pill"
+                  transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                  className="absolute inset-0 rounded-full bg-background shadow-sm"
                 />
-              </RechartsPie>
-            </ResponsiveContainer>
-          </div>
-          <div className="text-center -mt-1">
-            <p className="text-[10px] text-muted-foreground uppercase">Total Net Worth</p>
-            <p className="text-lg font-bold">{formatCurrency(totalNetWorth)}</p>
-          </div>
-          <div className="space-y-2 pt-2 border-t border-border/40">
-            {netWorthComposition.map((item, idx) => {
-              const pct = totalNetWorth > 0 ? Math.round((item.value / totalNetWorth) * 100) : 0
-              return (
-                <div key={item.name} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }} />
-                    <span className="text-xs font-medium">{item.name}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-muted-foreground">{pct}%</span>
-                    <span className="text-xs font-semibold">{formatCurrency(item.value)}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
+              )}
+              <span className="relative z-10">{p.label}</span>
+            </button>
+          )
+        })}
+      </div>
 
-      {/* Expense Breakdown */}
-      {analysis.expenseCategories.length > 0 && (
-        <div className="rounded-3xl bg-card border border-border/50 p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <ArrowDownRight className="w-4 h-4 text-red-500" />
-            <h3 className="text-sm font-bold">Expense Breakdown</h3>
-          </div>
-          <div className="space-y-2.5">
-            {analysis.expenseCategories.map((cat, idx) => {
-              const pct = analysis.expense > 0 ? Math.round((cat.value / analysis.expense) * 100) : 0
-              return (
-                <div key={cat.name}>
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }} />
-                      <span className="text-xs font-medium">{cat.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-muted-foreground">{pct}%</span>
-                      <span className="text-xs font-semibold">{formatCurrency(cat.value)}</span>
-                    </div>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-secondary/60 overflow-hidden ml-4">
-                    <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Income Sources */}
-      {analysis.incomeCategories.length > 0 && (
-        <div className="rounded-3xl bg-card border border-border/50 p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <ArrowUpRight className="w-4 h-4 text-emerald-500" />
-            <h3 className="text-sm font-bold">Income Sources</h3>
-          </div>
-          <div className="space-y-2.5">
-            {analysis.incomeCategories.map((cat, idx) => {
-              const pct = analysis.income > 0 ? Math.round((cat.value / analysis.income) * 100) : 0
-              return (
-                <div key={cat.name}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-medium">{cat.name}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-muted-foreground">{pct}%</span>
-                      <span className="text-xs font-semibold">{formatCurrency(cat.value)}</span>
-                    </div>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-secondary/60 overflow-hidden">
-                    <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Investment Summary */}
-      <div className="rounded-3xl bg-card border border-border/50 p-5 space-y-3">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-blue-500" />
-          <h3 className="text-sm font-bold">Investments & Assets</h3>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="p-3 rounded-xl bg-secondary/40 border border-border/30">
-            <p className="text-[10px] text-muted-foreground uppercase">Total Assets</p>
-            <p className="text-sm font-bold mt-0.5">{formatCurrency(investmentAnalysis.assetEquity)}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-secondary/40 border border-border/30">
-            <p className="text-[10px] text-muted-foreground uppercase">Portfolio Value</p>
-            <p className="text-sm font-bold mt-0.5">{formatCurrency(investmentAnalysis.currentValue)}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-secondary/40 border border-border/30">
-            <p className="text-[10px] text-muted-foreground uppercase">Total Invested</p>
-            <p className="text-sm font-bold mt-0.5">{formatCurrency(investmentAnalysis.totalInvested)}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-secondary/40 border border-border/30">
-            <p className="text-[10px] text-muted-foreground uppercase">Gain/Loss</p>
-            <p className={cn("text-sm font-bold mt-0.5", investmentAnalysis.gainLoss >= 0 ? 'text-emerald-500' : 'text-red-500')}>
-              {investmentAnalysis.gainLoss >= 0 ? '+' : ''}{formatCurrency(investmentAnalysis.gainLoss)} ({investmentAnalysis.returnPct}%)
+      {/* ===== Period navigator ===== */}
+      {period === 'custom' ? (
+        <RangeCalendar
+          start={customRange.start}
+          end={customRange.end}
+          onChange={(start, end) => setCustomRange({ start, end })}
+        />
+      ) : (
+        <div className="rounded-full bg-secondary/40 border border-border/60 flex items-center justify-between px-2 py-2.5">
+          <button onClick={() => navigate(-1)} className="w-10 h-10 rounded-full flex items-center justify-center text-foreground hover:bg-secondary transition-colors" aria-label="Previous period">
+            <ChevronLeft className="w-5 h-5" strokeWidth={2.4} />
+          </button>
+          <div className="text-center">
+            <p className="text-[17px] font-extrabold tracking-tight text-foreground leading-tight">{rangeLabel}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground mt-0.5">
+              {periodTx.length} {periodTx.length === 1 ? 'Transaction' : 'Transactions'}
             </p>
           </div>
-        </div>
-      </div>
-
-      {/* Lending Summary */}
-      <div className="rounded-3xl bg-card border border-border/50 p-5 space-y-3">
-        <div className="flex items-center gap-2">
-          <Heart className="w-4 h-4 text-pink-500" />
-          <h3 className="text-sm font-bold">Lending & Borrowing</h3>
-        </div>
-        <div className="space-y-2.5">
-          <div className="flex justify-between items-center p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
-            <div>
-              <p className="text-xs font-medium">Money Lent Out</p>
-              <p className="text-[10px] text-muted-foreground">{lendingAnalysis.lentCount} active</p>
-            </div>
-            <p className="text-sm font-bold text-emerald-500">{formatCurrency(lendingAnalysis.totalLent)}</p>
-          </div>
-          <div className="flex justify-between items-center p-3 rounded-xl bg-red-500/5 border border-red-500/20">
-            <div>
-              <p className="text-xs font-medium">Money Borrowed</p>
-              <p className="text-[10px] text-muted-foreground">{lendingAnalysis.borrowedCount} active</p>
-            </div>
-            <p className="text-sm font-bold text-red-500">{formatCurrency(lendingAnalysis.totalBorrowed)}</p>
-          </div>
-          <div className="flex justify-between items-center pt-2 border-t border-border/40">
-            <span className="text-xs font-semibold">Net Position</span>
-            <span className={cn("text-sm font-bold", lendingAnalysis.netLending >= 0 ? 'text-emerald-500' : 'text-red-500')}>
-              {lendingAnalysis.netLending >= 0 ? '+' : ''}{formatCurrency(lendingAnalysis.netLending)}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Goals Progress */}
-      {safeGoals.length > 0 && (
-        <div className="rounded-3xl bg-card border border-border/50 p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <Target className="w-4 h-4 text-indigo-500" />
-            <h3 className="text-sm font-bold">Goals Progress</h3>
-          </div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-xs text-muted-foreground">{goalsAnalysis.activeGoals} active goal{goalsAnalysis.activeGoals !== 1 ? 's' : ''}</span>
-            <span className="text-xs font-bold text-indigo-500">{goalsAnalysis.overallProgress}% overall</span>
-          </div>
-          <div className="h-2 rounded-full bg-secondary/60 overflow-hidden mb-3">
-            <div className="h-full rounded-full bg-indigo-500" style={{ width: `${goalsAnalysis.overallProgress}%` }} />
-          </div>
-          <div className="space-y-2.5">
-            {safeGoals.map((goal) => {
-              const pct = goal.targetAmount > 0 ? Math.min(100, Math.round((goal.currentAmount / goal.targetAmount) * 100)) : 0
-              return (
-                <div key={goal.id} className="p-3 rounded-xl bg-secondary/30 border border-border/30">
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-xs font-semibold">{goal.title}</span>
-                    <span className="text-[10px] font-bold text-indigo-500">{pct}%</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-secondary/60 overflow-hidden">
-                    <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="flex justify-between mt-1.5">
-                    <span className="text-[10px] text-muted-foreground">{formatCurrency(goal.currentAmount)}</span>
-                    <span className="text-[10px] text-muted-foreground">{formatCurrency(goal.targetAmount)}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          <button onClick={() => navigate(1)} className="w-10 h-10 rounded-full flex items-center justify-center text-foreground hover:bg-secondary transition-colors" aria-label="Next period">
+            <ChevronRight className="w-5 h-5" strokeWidth={2.4} />
+          </button>
         </div>
       )}
 
-      {/* Bills Summary */}
-      <div className="rounded-3xl bg-card border border-border/50 p-5 space-y-3">
-        <div className="flex items-center gap-2">
-          <Wallet className="w-4 h-4 text-amber-500" />
-          <h3 className="text-sm font-bold">Bills & Obligations</h3>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 text-center">
-            <p className="text-[10px] text-muted-foreground uppercase">Unpaid Bills</p>
-            <p className="text-lg font-bold text-amber-500 mt-0.5">{billsAnalysis.unpaidCount}</p>
+      {/* ===== Spending / Income summary ===== */}
+      <div className="relative rounded-[1.6rem] bg-card border border-border/70 p-5 shadow-card overflow-hidden">
+        {/* soft color glows */}
+        <div className="pointer-events-none absolute -top-10 -left-10 w-40 h-40 rounded-full bg-negative/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-10 -right-10 w-40 h-40 rounded-full bg-positive/10 blur-3xl" />
+        <div className="relative flex items-start justify-between">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-negative">Spending</p>
+            <p className="text-[26px] font-bold tracking-tight text-foreground mt-1">{formatCurrency(summary.spending)}</p>
           </div>
-          <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 text-center">
-            <p className="text-[10px] text-muted-foreground uppercase">Amount Due</p>
-            <p className="text-lg font-bold text-amber-500 mt-0.5">{formatCurrency(billsAnalysis.totalUnpaid)}</p>
+          <div className="text-right">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-positive">Income</p>
+            <p className="text-[26px] font-bold tracking-tight text-foreground mt-1">{formatCurrency(summary.income)}</p>
           </div>
         </div>
+        <div className="relative mt-5 flex items-center justify-between rounded-2xl bg-secondary/60 px-4 py-3.5">
+          <span className="text-[14px] font-semibold text-muted-foreground">Net Balance</span>
+          <span className={cn('text-[18px] font-extrabold', summary.net >= 0 ? 'text-foreground' : 'text-negative')}>
+            {summary.net < 0 ? '-' : ''}{formatCurrency(Math.abs(summary.net))}
+          </span>
+        </div>
+      </div>
+
+      {/* ===== Budget ===== */}
+      <div>
+        <h2 className="text-[19px] font-semibold tracking-tight text-foreground mb-3">Budget</h2>
+        <div className="rounded-[1.6rem] bg-card border border-border/70 p-6 shadow-card">
+          {budgetData.hasBudget ? (
+            <>
+              <BudgetGauge remaining={budgetData.remaining} pct={budgetData.pct} />
+              <div className="flex items-end justify-between mt-4">
+                <div>
+                  <p className="text-[13px] text-muted-foreground">Spent</p>
+                  <p className="text-[17px] font-extrabold text-foreground">{formatCurrency(budgetData.spent)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[13px] text-muted-foreground flex items-center gap-1 justify-end">
+                    Limit <Pencil className="w-3 h-3" />
+                  </p>
+                  <p className="text-[17px] font-extrabold text-foreground">{formatCurrency(budgetData.limit)}</p>
+                </div>
+              </div>
+              <div className="mt-4 pt-4 border-t border-border/60 text-center">
+                <p className="text-[13px] text-muted-foreground">
+                  Safe to spend: <span className="font-extrabold text-positive">{formatCurrency(budgetData.safePerDay)}/day</span> for the rest of this period.
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-6 text-center">
+              <p className="text-[14px] font-semibold text-foreground">No budget set for this period</p>
+              <p className="text-[12px] text-muted-foreground mt-1">Create a budget to track safe-to-spend here.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ===== Categories ===== */}
+      <div>
+        <h2 className="text-[19px] font-semibold tracking-tight text-foreground mb-3">Categories</h2>
+        <div className="rounded-[1.6rem] bg-card border border-border/70 p-5 shadow-card space-y-5">
+          {/* Spending / Income toggle */}
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-full bg-secondary/70 w-[220px] mx-auto">
+            {(['spending', 'income'] as CatMode[]).map(m => {
+              const active = catMode === m
+              return (
+                <button
+                  key={m}
+                  onClick={() => setCatMode(m)}
+                  className={cn('relative h-8 rounded-full text-[12px] font-bold capitalize transition-colors', active ? 'text-foreground' : 'text-muted-foreground')}
+                >
+                  {active && (
+                    <motion.span layoutId="cat-pill" transition={{ type: 'spring', stiffness: 420, damping: 32 }} className="absolute inset-0 rounded-full bg-background shadow-sm" />
+                  )}
+                  <span className="relative z-10">{m}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {categoryData.list.length > 0 ? (
+            <>
+              {/* Donut with % labels placed inside each slice */}
+              <div className="relative h-60 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RechartsPie>
+                    <Pie
+                      data={categoryData.list}
+                      cx="50%" cy="50%"
+                      innerRadius={62} outerRadius={100}
+                      paddingAngle={2} dataKey="value" nameKey="name"
+                      stroke="none" animationDuration={600}
+                      label={renderDonutLabel}
+                      labelLine={false}
+                    >
+                      {categoryData.list.map((_, idx) => (
+                        <Cell key={idx} fill={DONUT_COLORS[idx % DONUT_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '14px', fontSize: '12px', boxShadow: 'var(--shadow-elevated)', padding: '10px 14px' }}
+                      itemStyle={{ color: 'var(--foreground)' }}
+                      formatter={(value: number, name: string) => {
+                        const pct = categoryData.total > 0 ? ((value / categoryData.total) * 100).toFixed(1) : '0'
+                        return [`${formatCurrency(value)} (${pct}%)`, getCategoryConfig(name).label]
+                      }}
+                    />
+                  </RechartsPie>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Ranked category list */}
+              <div className="space-y-1">
+                {categoryData.list.map((cat, idx) => {
+                  const cfg = getCategoryConfig(cat.name)
+                  const pct = categoryData.total > 0 ? (cat.value / categoryData.total) * 100 : 0
+                  return (
+                    <div key={cat.name} className="flex items-center gap-3 py-2.5 border-b border-border/40 last:border-0">
+                      <div className={cn('w-11 h-11 rounded-2xl flex items-center justify-center text-lg flex-shrink-0 ring-1 ring-black/5 dark:ring-white/5', cfg.bg)}>
+                        {cfg.emoji}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="block text-[15px] font-semibold text-foreground truncate">{cfg.label}</span>
+                        <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                          <span
+                            className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ background: DONUT_COLORS[idx % DONUT_COLORS.length] }}
+                          />
+                          {pct.toFixed(1)}%
+                        </span>
+                      </div>
+                      <span className="text-[15px] font-extrabold text-foreground flex-shrink-0">{formatCurrency(cat.value)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          ) : (
+            <p className="text-center text-[13px] text-muted-foreground py-6">No {catMode} in this period.</p>
+          )}
+        </div>
+      </div>
+
+      {/* ===== Payment modes ===== */}
+      <div>
+        <h2 className="text-[19px] font-semibold tracking-tight text-foreground mb-3">Payment modes</h2>
+        <div className="rounded-[1.6rem] bg-card border border-border/70 p-5 shadow-card space-y-4">
+          <div className="grid grid-cols-3 gap-1 p-1 rounded-full bg-secondary/70">
+            {(['spending', 'income', 'transfers'] as PayMode[]).map(m => {
+              const active = payMode === m
+              return (
+                <button
+                  key={m}
+                  onClick={() => setPayMode(m)}
+                  className={cn('relative h-8 rounded-full text-[12px] font-bold capitalize transition-colors', active ? 'text-foreground' : 'text-muted-foreground')}
+                >
+                  {active && (
+                    <motion.span layoutId="pay-pill" transition={{ type: 'spring', stiffness: 420, damping: 32 }} className="absolute inset-0 rounded-full bg-background shadow-sm" />
+                  )}
+                  <span className="relative z-10">{m}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {paymentData.length > 0 ? (
+            <div className="space-y-1">
+              {paymentData.map((pm) => (
+                <div key={pm.name} className="flex items-center gap-3 py-2.5 border-b border-border/40 last:border-0">
+                  <div className="w-10 h-10 rounded-2xl bg-positive/10 flex items-center justify-center text-lg flex-shrink-0">💵</div>
+                  <span className="flex-1 text-[15px] font-semibold text-foreground truncate">{pm.name}</span>
+                  <span className="text-[15px] font-extrabold text-foreground flex-shrink-0">{formatCurrency(pm.value)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-[13px] text-muted-foreground py-4">No {payMode} in this period.</p>
+          )}
+        </div>
+      </div>
+
+      {/* ===== Stats ===== */}
+      <div>
+        <h2 className="text-[19px] font-semibold tracking-tight text-foreground mb-3">Stats</h2>
+        <div className="rounded-[1.6rem] bg-card border border-border/70 p-5 shadow-card space-y-5">
+          {/* Average spending */}
+          <div>
+            <p className="text-[12px] font-bold uppercase tracking-wider text-negative mb-3">Average Spending</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[13px] text-muted-foreground">Per day</p>
+                <p className="text-[20px] font-extrabold text-foreground mt-0.5">{formatCurrency(stats.spendPerDay)}</p>
+              </div>
+              <div>
+                <p className="text-[13px] text-muted-foreground">Per transaction</p>
+                <p className="text-[20px] font-extrabold text-foreground mt-0.5">{formatCurrency(stats.spendPerTx)}</p>
+              </div>
+            </div>
+          </div>
+          <div className="h-px bg-border/60" />
+          {/* Average income */}
+          <div>
+            <p className="text-[12px] font-bold uppercase tracking-wider text-positive mb-3">Average Income</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[13px] text-muted-foreground">Per day</p>
+                <p className="text-[20px] font-extrabold text-foreground mt-0.5">{formatCurrency(stats.incomePerDay)}</p>
+              </div>
+              <div>
+                <p className="text-[13px] text-muted-foreground">Per transaction</p>
+                <p className="text-[20px] font-extrabold text-foreground mt-0.5">{formatCurrency(stats.incomePerTx)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ *
+ * Budget semicircle gauge
+ * ------------------------------------------------------------------ */
+function BudgetGauge({ remaining, pct }: { remaining: number; pct: number }) {
+  // Semicircle arc: 180° sweep. Stroke dasharray on a half-circle path.
+  const R = 80
+  const CX = 100
+  const CY = 100
+  const circumference = Math.PI * R // half circle length
+  const progress = Math.max(0, Math.min(1, pct / 100))
+  const over = remaining < 0
+  const arcColor = over ? 'var(--negative)' : 'var(--positive)'
+
+  // Arc path from left (180°) to right (0°)
+  const arc = `M ${CX - R} ${CY} A ${R} ${R} 0 0 1 ${CX + R} ${CY}`
+
+  return (
+    <div className="relative w-full flex flex-col items-center">
+      <svg viewBox="0 0 200 112" className="w-full max-w-[280px]">
+        {/* Track */}
+        <path d={arc} fill="none" stroke="var(--secondary)" strokeWidth={16} strokeLinecap="round" />
+        {/* Progress */}
+        <path
+          d={arc}
+          fill="none"
+          stroke={arcColor}
+          strokeWidth={16}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - progress)}
+          style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.32,0.72,0,1)' }}
+        />
+      </svg>
+      {/* Center label */}
+      <div className="absolute inset-0 flex flex-col items-center justify-end pb-1">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+          {over ? 'Over by' : 'Remaining'}
+        </p>
+        <p className={cn('text-[28px] font-extrabold tracking-tight', over ? 'text-negative' : 'text-foreground')}>
+          {formatCurrency(Math.abs(remaining))}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ *
+ * Inline themed range calendar (pick start → end)
+ * ------------------------------------------------------------------ */
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+function ymd(y: number, m: number, d: number) {
+  return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+function RangeCalendar({ start, end, onChange }: { start: string; end: string; onChange: (start: string, end: string) => void }) {
+  const [viewDate, setViewDate] = useState(() => new Date((start || toYMD(new Date())) + 'T00:00:00'))
+  // Which endpoint the next tap sets. Starts fresh: the first tap sets a new
+  // start date, the next tap sets the end. Then it cycles.
+  const [picking, setPicking] = useState<'start' | 'end'>('start')
+
+  const year = viewDate.getFullYear()
+  const month = viewDate.getMonth()
+  const firstDay = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  const startD = start ? new Date(start + 'T00:00:00') : null
+  const endD = end ? new Date(end + 'T00:00:00') : null
+
+  const handleDay = (day: number) => {
+    const picked = ymd(year, month, day)
+    const pickedD = new Date(picked + 'T00:00:00')
+
+    if (picking === 'start') {
+      // Starting a fresh range
+      onChange(picked, picked)
+      setPicking('end')
+      return
+    }
+    // picking the end of the current range
+    if (startD && pickedD < startD) {
+      // Picked a date before the start → make it the new start
+      onChange(picked, start)
+    } else {
+      onChange(start, picked)
+    }
+    setPicking('start')
+  }
+
+  const inRange = (day: number) => {
+    if (!startD || !endD) return false
+    const d = new Date(ymd(year, month, day) + 'T00:00:00')
+    return d > startD && d < endD
+  }
+  const isStart = (day: number) => startD && ymd(year, month, day) === toYMD(startD)
+  const isEnd = (day: number) => endD && ymd(year, month, day) === toYMD(endD)
+
+  const cells: (number | null)[] = []
+  for (let i = 0; i < firstDay; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+
+  const fmt = (d: Date | null) => d ? d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+
+  return (
+    <div className="rounded-[1.6rem] bg-card border border-border/70 p-5 shadow-card">
+      {/* Selected range summary */}
+      <div className="flex items-center justify-center gap-2 mb-4">
+        <span className={cn('px-3 py-1.5 rounded-full text-[12px] font-bold', picking === 'start' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground')}>
+          {fmt(startD)}
+        </span>
+        <span className="text-muted-foreground text-[13px] font-bold">→</span>
+        <span className={cn('px-3 py-1.5 rounded-full text-[12px] font-bold', picking === 'end' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground')}>
+          {fmt(endD)}
+        </span>
+      </div>
+
+      {/* Month header */}
+      <div className="flex items-center justify-between mb-3">
+        <button type="button" onClick={() => setViewDate(new Date(year, month - 1, 1))} className="w-9 h-9 rounded-full bg-secondary/60 flex items-center justify-center hover:bg-secondary transition-colors">
+          <ChevronLeft className="w-4 h-4" strokeWidth={2.4} />
+        </button>
+        <span className="text-[15px] font-extrabold text-foreground">{MONTHS[month]} {year}</span>
+        <button type="button" onClick={() => setViewDate(new Date(year, month + 1, 1))} className="w-9 h-9 rounded-full bg-secondary/60 flex items-center justify-center hover:bg-secondary transition-colors">
+          <ChevronRight className="w-4 h-4" strokeWidth={2.4} />
+        </button>
+      </div>
+
+      {/* Weekday row */}
+      <div className="grid grid-cols-7 mb-1">
+        {WEEKDAYS.map((wd, i) => (
+          <div key={i} className="text-center text-[11px] font-bold text-muted-foreground py-1">{wd}</div>
+        ))}
+      </div>
+
+      {/* Days */}
+      <div className="grid grid-cols-7 gap-y-1">
+        {cells.map((day, idx) => {
+          if (day === null) return <div key={idx} />
+          const s = isStart(day)
+          const e = isEnd(day)
+          const mid = inRange(day)
+          const endpoint = s || e
+          return (
+            <div key={idx} className={cn('flex justify-center', mid && 'bg-primary/12', s && !e && 'bg-primary/12 rounded-l-full', e && !s && 'bg-primary/12 rounded-r-full')}>
+              <button
+                type="button"
+                onClick={() => handleDay(day)}
+                className={cn(
+                  'w-10 h-10 rounded-full text-[13px] font-semibold flex items-center justify-center transition-all',
+                  endpoint ? 'bg-primary text-primary-foreground shadow-card' : mid ? 'text-primary font-semibold' : 'text-foreground hover:bg-secondary'
+                )}
+              >
+                {day}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Footer helper */}
+      <div className="mt-3 pt-3 border-t border-border/60 text-center">
+        <p className="text-[12px] text-muted-foreground">
+          {picking === 'start' ? 'Tap to pick a start date' : 'Now pick an end date'}
+        </p>
       </div>
     </div>
   )

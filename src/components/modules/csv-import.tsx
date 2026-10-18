@@ -8,6 +8,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, FileText, Check, AlertCircle, X, ArrowRight, Download, FileSpreadsheet } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { useToast } from '@/components/ui/toast-notification'
+import { Select } from '@/components/ui/select'
+import { PageHeader } from '@/components/ui/page-header'
+import { Button } from '@/components/ui/button'
 
 interface ParsedRow {
   date: string
@@ -391,10 +394,7 @@ export function CSVImport() {
 
   return (
     <div className="flex flex-col space-y-5 pb-6">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Import & Export</h1>
-        <p className="text-xs text-muted-foreground">Import transactions from CSV or Excel, or export your data</p>
-      </div>
+      <PageHeader title="Import & Export" subtitle="Import transactions from CSV or Excel, or export your data" />
 
       {/* Step Indicator */}
       <div className="flex items-center gap-2">
@@ -479,15 +479,15 @@ export function CSVImport() {
               <div className="p-3 rounded-xl bg-secondary/30 border border-border/30 space-y-2">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase">Header Row</p>
                 <p className="text-[10px] text-muted-foreground">If columns look wrong, pick which row has the column names:</p>
-                <select
-                  value={selectedHeaderRow}
+                <Select
+                  value={String(selectedHeaderRow)}
                   onChange={(e) => handleHeaderRowChange(parseInt(e.target.value))}
-                  className="w-full h-9 px-3 rounded-lg bg-background border border-border/50 text-xs text-foreground focus:outline-none"
+                  className="h-9 rounded-lg"
                 >
                   {excelAllRows.slice(0, 10).map((row, i) => (
-                    <option key={i} value={i}>Row {i + 1}: {row.slice(0, 4).filter(Boolean).join(' | ')}</option>
+                    <option key={i} value={String(i)}>Row {i + 1}: {row.slice(0, 4).filter(Boolean).join(' | ')}</option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
 
@@ -497,13 +497,13 @@ export function CSVImport() {
               {(['date', 'description', 'amount'] as const).map(field => (
                 <div key={field} className="flex items-center justify-between">
                   <span className="text-xs font-medium text-muted-foreground capitalize w-24">{field}</span>
-                  <select
-                    value={mapping[field]}
+                  <Select
+                    value={String(mapping[field])}
                     onChange={(e) => setMapping({ ...mapping, [field]: parseInt(e.target.value) })}
-                    className="flex-1 h-9 px-3 rounded-xl bg-secondary border border-border/50 text-xs text-foreground focus:outline-none"
+                    className="flex-1 h-9 rounded-xl"
                   >
-                    {headers.map((h, i) => <option key={i} value={i}>{h || `Column ${i + 1}`}</option>)}
-                  </select>
+                    {headers.map((h, i) => <option key={i} value={String(i)}>{h || `Column ${i + 1}`}</option>)}
+                  </Select>
                 </div>
               ))}
             </div>
@@ -518,9 +518,7 @@ export function CSVImport() {
               ))}
             </div>
 
-            <button onClick={handleParsePreview} className="w-full h-10 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:opacity-90">
-              Parse & Preview
-            </button>
+            <Button onClick={handleParsePreview} className="w-full">Parse &amp; Preview</Button>
           </motion.div>
         )}
 
@@ -552,10 +550,10 @@ export function CSVImport() {
             </div>
 
             <div className="flex gap-2">
-              <button onClick={() => setStep('map')} className="flex-1 h-10 rounded-xl bg-secondary text-foreground text-sm font-bold">Back</button>
-              <button onClick={handleImport} disabled={importing} className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-bold disabled:opacity-40">
+              <Button variant="secondary" onClick={() => setStep('map')} className="flex-1">Back</Button>
+              <Button onClick={handleImport} disabled={importing} className="flex-1">
                 {importing ? 'Importing...' : `Import ${parsedRows.filter(r => !r.isDuplicate).length} Records`}
-              </button>
+              </Button>
             </div>
           </motion.div>
         )}

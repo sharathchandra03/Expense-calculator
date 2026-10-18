@@ -2,11 +2,40 @@
 
 import React, { useEffect, useRef } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
-import { SyncService } from '@/services/SyncService'
+import { SyncService, SYNCED_PREFERENCE_LS_KEYS } from '@/services/SyncService'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { db } from '@/db/schema'
 
 const DEBOUNCE_MS = 3000 // Wait 3 seconds after last change before pushing
+
+/**
+ * Patch localStorage ONCE so same-tab writes to a synced preference key emit a
+ * `pennyflow:prefs-changed` event. The native `storage` event only fires in
+ * OTHER tabs, so without this a user changing (say) their dashboard layout in
+ * the active tab would not trigger a cloud backup until some unrelated DB write
+ * or a tab-focus push happened. Idempotent and SSR-safe.
+ */
+let prefsPatched = false
+function patchLocalStorageForPrefSync() {
+  if (prefsPatched || typeof window === 'undefined') return
+  prefsPatched = true
+  const syncedKeys = new Set(SYNCED_PREFERENCE_LS_KEYS)
+  const emit = (key: string) => {
+    if (syncedKeys.has(key)) {
+      window.dispatchEvent(new Event('pennyflow:prefs-changed'))
+    }
+  }
+  const origSet = localStorage.setItem.bind(localStorage)
+  const origRemove = localStorage.removeItem.bind(localStorage)
+  localStorage.setItem = (key: string, value: string) => {
+    origSet(key, value)
+    emit(key)
+  }
+  localStorage.removeItem = (key: string) => {
+    origRemove(key)
+    emit(key)
+  }
+}
 
 /**
  * AutoSyncProvider — Cloud sync orchestrator
@@ -30,6 +59,11 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
   const pushTimer = useRef<NodeJS.Timeout | null>(null)
   const hasInitialized = useRef(false)
   const isSyncing = useRef(false)
+
+  // Patch localStorage once so same-tab preference writes can be detected.
+  useEffect(() => {
+    patchLocalStorageForPrefSync()
+  }, [])
 
   // On login: sync data based on state
   // Case 1: Guest had local data → push it to their cloud account (migrate guest→cloud)
@@ -101,7 +135,10 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
       }, DEBOUNCE_MS)
     }
 
-    // Listen to all table changes via Dexie hooks
+    // Listen to all table changes via Dexie hooks.
+    // This list mirrors SyncService.SYNC_TABLES so every table that gets
+    // backed up to the cloud also triggers a debounced auto-push when it
+    // changes. (supportTickets has its own dedicated cloud sync path.)
     const tables = [
       db.transactions,
       db.accounts,
@@ -112,9 +149,15 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
       db.budgets,
       db.investments,
       db.customCategories,
+      db.tags,
       db.subscriptions,
       db.debts,
       db.splits,
+      db.sharedWallets,
+      db.notifications,
+      db.systemLogs,
+      db.financialBriefs,
+      db.templates,
       db.userProfile,
     ]
 
@@ -136,8 +179,19 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
       )
     })
 
+    // Preference/UI data lives in localStorage (dashboard layout, notes,
+    // theme, recent searches, ...) and never touches Dexie, so it wouldn't
+    // otherwise trigger a push. Listen for cross-tab `storage` events and the
+    // same-tab `pennyflow:prefs-changed` event (see patchLocalStorage below)
+    // so those changes are backed up too.
+    const onStorage = () => debouncedPush()
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('pennyflow:prefs-changed', onStorage)
+
     return () => {
       hooks.forEach(unsub => unsub())
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('pennyflow:prefs-changed', onStorage)
       if (pushTimer.current) clearTimeout(pushTimer.current)
     }
   }, [user])

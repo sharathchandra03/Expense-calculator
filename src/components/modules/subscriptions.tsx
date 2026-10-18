@@ -7,6 +7,9 @@ import { formatCurrency, cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, X, Check, RefreshCw, AlertTriangle, Calendar, Trash2, Zap } from 'lucide-react'
 import { DatePicker } from '@/components/ui/date-picker'
+import { Select } from '@/components/ui/select'
+import { PageHeader } from '@/components/ui/page-header'
+import { Button } from '@/components/ui/button'
 
 export function SubscriptionTracker() {
   const [showForm, setShowForm] = useState(false)
@@ -79,10 +82,7 @@ export function SubscriptionTracker() {
 
   return (
     <div className="flex flex-col space-y-5 pb-6">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Subscriptions</h1>
-        <p className="text-xs text-muted-foreground">Track recurring payments and subscriptions</p>
-      </div>
+      <PageHeader title="Subscriptions" subtitle="Track recurring payments and subscriptions" />
 
       {/* Cost Summary */}
       <div className="grid grid-cols-2 gap-3">
@@ -125,12 +125,9 @@ export function SubscriptionTracker() {
       )}
 
       {/* Add Button */}
-      <button
-        onClick={() => setShowForm(true)}
-        className="w-full flex items-center justify-center gap-2 p-3 rounded-2xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all"
-      >
+      <Button onClick={() => setShowForm(true)} size="pill" className="w-full">
         <Plus className="w-4 h-4" /> Add Subscription
-      </button>
+      </Button>
 
       {/* Add Form */}
       <AnimatePresence>{showForm && <SubForm onClose={() => setShowForm(false)} />}</AnimatePresence>
@@ -249,14 +246,14 @@ function SubForm({ onClose }: { onClose: () => void }) {
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name (e.g. Netflix)" className="w-full h-9 px-3 rounded-xl bg-secondary border border-border/50 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/60" />
         <div className="grid grid-cols-2 gap-2">
           <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount" className="h-9 px-3 rounded-xl bg-secondary border border-border/50 text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-primary/60" />
-          <select value={cycle} onChange={(e) => setCycle(e.target.value as any)} className="h-9 px-3 rounded-xl bg-secondary border border-border/50 text-xs text-foreground focus:outline-none">
+          <Select value={cycle} onChange={(e) => setCycle(e.target.value as any)} className="h-9 rounded-xl">
             <option value="monthly">Monthly</option>
             <option value="yearly">Yearly</option>
             <option value="weekly">Weekly</option>
-          </select>
+          </Select>
         </div>
         <DatePicker value={nextBilling} onChange={(d) => setNextBilling(d)} placeholder="Next billing date" />
-        <button onClick={handleSave} disabled={!name || !amount} className="w-full h-9 rounded-xl bg-primary text-primary-foreground text-xs font-bold disabled:opacity-40 hover:opacity-90"><Check className="w-3.5 h-3.5 inline mr-1" />Save</button>
+        <Button onClick={handleSave} disabled={!name || !amount} size="sm" className="w-full"><Check className="w-3.5 h-3.5" />Save</Button>
       </div>
     </motion.div>
   )

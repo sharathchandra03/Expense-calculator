@@ -11,6 +11,7 @@ import {
 } from '@/services/SupportService'
 import { useToast } from '@/components/ui/toast-notification'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import {
   Bug, AlertTriangle, Lightbulb, HelpCircle, MessageSquare,
@@ -41,16 +42,11 @@ const CATEGORIES: CategoryOption[] = [
   { id: 'feedback', label: 'General Feedback', description: 'Share your thoughts with us', icon: MessageSquare, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
 ]
 
-const PLACEHOLDER_CARDS = [
-  { label: 'FAQ', description: 'Common questions answered', icon: BookOpen, color: 'text-purple-500', bg: 'bg-purple-500/10' },
-  { label: 'Contact Support', description: 'Reach our support team', icon: Headphones, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
-]
-
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
-export function HelpSupport() {
+export function HelpSupport({ onNavigateToTab }: { onNavigateToTab?: (tab: string) => void } = {}) {
   const [view, setView] = useState<ViewState>('dashboard')
   const [selectedCategory, setSelectedCategory] = useState<SupportTicketCategory | null>(null)
   const [submittedTicketId, setSubmittedTicketId] = useState<string | null>(null)
@@ -106,6 +102,7 @@ export function HelpSupport() {
             <SupportDashboard
               onCategorySelect={handleCategorySelect}
               onViewHistory={() => setView('history')}
+              onOpenFaq={() => onNavigateToTab?.('faq')}
             />
           </motion.div>
         )}
@@ -156,9 +153,10 @@ export function HelpSupport() {
 // DASHBOARD VIEW
 // ============================================================================
 
-function SupportDashboard({ onCategorySelect, onViewHistory }: {
+function SupportDashboard({ onCategorySelect, onViewHistory, onOpenFaq }: {
   onCategorySelect: (cat: SupportTicketCategory) => void
   onViewHistory: () => void
+  onOpenFaq?: () => void
 }) {
   const tickets = useLiveQuery(() => db.supportTickets.count()) ?? 0
 
@@ -166,7 +164,7 @@ function SupportDashboard({ onCategorySelect, onViewHistory }: {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Help & Support</h1>
+        <h1 className="text-xl font-bold text-foreground">Help & Support</h1>
         <p className="text-xs text-muted-foreground mt-1">
           How can we help you today?
         </p>
@@ -221,27 +219,35 @@ function SupportDashboard({ onCategorySelect, onViewHistory }: {
         </div>
       </div>
 
-      {/* Placeholder Cards */}
+      {/* Resources */}
       <div className="space-y-2">
         <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-1">
           Resources
         </h3>
         <div className="grid grid-cols-2 gap-3">
-          {PLACEHOLDER_CARDS.map((card) => {
-            const Icon = card.icon
-            return (
-              <div
-                key={card.label}
-                className="flex flex-col items-center text-center p-4 rounded-2xl bg-secondary/30 border border-border/30 opacity-60"
-              >
-                <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center mb-2', card.bg)}>
-                  <Icon className={cn('w-5 h-5', card.color)} />
-                </div>
-                <p className="text-xs font-semibold text-foreground">{card.label}</p>
-                <p className="text-[9px] text-muted-foreground mt-0.5">Coming soon</p>
-              </div>
-            )
-          })}
+          {/* FAQ — opens the dedicated FAQ page */}
+          <button
+            onClick={() => onOpenFaq?.()}
+            className="flex flex-col items-center text-center p-4 rounded-2xl bg-card border border-border/50 hover:border-primary/30 hover:shadow-sm active:scale-[0.98] transition-all"
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-2 bg-purple-500/10">
+              <BookOpen className="w-5 h-5 text-purple-500" />
+            </div>
+            <p className="text-xs font-semibold text-foreground">FAQ</p>
+            <p className="text-[9px] text-muted-foreground mt-0.5">Common questions answered</p>
+          </button>
+
+          {/* Contact Support — scrolls to the category list above */}
+          <button
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="flex flex-col items-center text-center p-4 rounded-2xl bg-card border border-border/50 hover:border-primary/30 hover:shadow-sm active:scale-[0.98] transition-all"
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-2 bg-indigo-500/10">
+              <Headphones className="w-5 h-5 text-indigo-500" />
+            </div>
+            <p className="text-xs font-semibold text-foreground">Contact Support</p>
+            <p className="text-[9px] text-muted-foreground mt-0.5">Reach our support team</p>
+          </button>
         </div>
       </div>
     </div>
@@ -400,7 +406,7 @@ function ReportForm({ category, onBack, onSuccess }: {
 
         {/* Description - all categories */}
         <FormField label={category === 'feedback' ? 'Your Feedback' : 'Description'} required={category !== 'feedback'}>
-          <textarea
+          <Textarea
             placeholder={
               category === 'bug' ? 'Describe what happened...'
               : category === 'feature_request' ? 'Describe the feature you want...'
@@ -411,7 +417,7 @@ function ReportForm({ category, onBack, onSuccess }: {
             value={formData.description}
             onChange={(e) => updateField('description', e.target.value)}
             rows={4}
-            className="w-full px-4 py-3 rounded-xl border border-border bg-secondary/30 text-sm text-foreground placeholder:text-muted-foreground/60 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-colors"
+            className="text-sm"
           />
         </FormField>
 
@@ -419,12 +425,12 @@ function ReportForm({ category, onBack, onSuccess }: {
         {category === 'bug' && (
           <>
             <FormField label="Steps to Reproduce" required>
-              <textarea
+              <Textarea
                 placeholder="1. Open the app&#10;2. Go to...&#10;3. Tap on..."
                 value={formData.stepsToReproduce}
                 onChange={(e) => updateField('stepsToReproduce', e.target.value)}
                 rows={3}
-                className="w-full px-4 py-3 rounded-xl border border-border bg-secondary/30 text-sm text-foreground placeholder:text-muted-foreground/60 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-colors"
+                className="text-sm"
               />
             </FormField>
             <FormField label="Expected Behaviour">
@@ -450,21 +456,21 @@ function ReportForm({ category, onBack, onSuccess }: {
         {category === 'feature_request' && (
           <>
             <FormField label="Problem you're trying to solve">
-              <textarea
+              <Textarea
                 placeholder="What challenge are you facing?"
                 value={formData.problemToSolve}
                 onChange={(e) => updateField('problemToSolve', e.target.value)}
                 rows={3}
-                className="w-full px-4 py-3 rounded-xl border border-border bg-secondary/30 text-sm text-foreground placeholder:text-muted-foreground/60 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-colors"
+                className="text-sm"
               />
             </FormField>
             <FormField label="Your Suggestion">
-              <textarea
+              <Textarea
                 placeholder="How would you like this to work?"
                 value={formData.suggestion}
                 onChange={(e) => updateField('suggestion', e.target.value)}
                 rows={3}
-                className="w-full px-4 py-3 rounded-xl border border-border bg-secondary/30 text-sm text-foreground placeholder:text-muted-foreground/60 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-colors"
+                className="text-sm"
               />
             </FormField>
           </>

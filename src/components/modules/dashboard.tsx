@@ -4,8 +4,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, Transaction, Lending, Asset, Goal, Bill, generateUUID, syncAccountToAsset } from '@/db/schema'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
-import { formatCurrency, cn } from '@/lib/utils'
-import { ArrowUpRight, ArrowDownRight, Sparkles, Target, Calendar, ArrowRight, ShieldCheck, AlertCircle, ShoppingBag, Plus, Zap, TrendingUp, TrendingDown, DollarSign, Heart, Clock, UtensilsCrossed, Car, ShoppingCart, Receipt, MoreHorizontal, X, Check, Settings, Wallet } from 'lucide-react'
+import { formatCurrency, getCurrencySymbol, cn } from '@/lib/utils'
+import { ArrowUpRight, ArrowDownRight, Sparkles, Target, Calendar, ArrowRight, ShieldCheck, AlertCircle, ShoppingBag, Plus, Zap, TrendingUp, TrendingDown, DollarSign, Heart, Clock, UtensilsCrossed, Car, ShoppingCart, Receipt, MoreHorizontal, X, Check, Settings, Wallet, ChevronRight } from 'lucide-react'
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import { DatePicker } from '@/components/ui/date-picker'
 import { TimePicker } from '@/components/ui/time-picker'
@@ -16,14 +16,17 @@ import { useUndo } from '@/components/ui/undo-toast'
 import { SmartDefaultsService } from '@/services/SmartDefaultsService'
 import { SmartInsightsService, Insight } from '@/services/SmartInsightsService'
 import { getCategoryConfig } from '@/lib/category-icons'
+import { GoalService } from '@/services/GoalService'
+import { DebtService } from '@/services/DebtService'
+import { BudgetManagementService } from '@/services/BudgetManagementService'
 
 interface DashboardProps {
   onNavigateToTab: (tab: any) => void;
 }
 
-type DashCardId = 'spending' | 'health' | 'topcat' | 'month' | 'bills' | 'goals' | 'lending' | 'recent'
+type DashCardId = 'spending' | 'health' | 'topcat' | 'month' | 'bills' | 'goals' | 'debt' | 'lending' | 'recent'
 
-const DEFAULT_DASH_ORDER: DashCardId[] = ['spending', 'health', 'topcat', 'month', 'bills', 'goals', 'lending', 'recent']
+const DEFAULT_DASH_ORDER: DashCardId[] = ['spending', 'health', 'topcat', 'month', 'bills', 'goals', 'debt', 'lending', 'recent']
 
 function getDashStoredOrder(): DashCardId[] {
   if (typeof window === 'undefined') return DEFAULT_DASH_ORDER
@@ -78,23 +81,20 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
       .sort((a, b) => b.date.localeCompare(a.date))
   }, [safeAllTransactions, todayStr])
 
-  // Monthly budget: total limit across all active budgets vs total spent this month
+  // Monthly budget: for the currently-active monthly budgets, compute spend
+  // across each budget's own categories (via the service) so the home bar
+  // matches exactly what the Budgets screen shows. Upcoming budgets (a future
+  // month) are excluded so the bar reflects the month in progress.
   const monthlyBudgetData = React.useMemo(() => {
-    const now = new Date()
-    const currentMonth = now.getMonth()
-    const currentYear = now.getFullYear()
+    const activeBudgets = safeBudgets.filter(
+      b => b.isActive && b.period === 'monthly' && BudgetManagementService.getTiming(b) === 'active'
+    )
 
-    // Sum all active monthly budget limits
-    const activeBudgets = safeBudgets.filter(b => b.isActive && b.period === 'monthly')
     const totalBudgetLimit = activeBudgets.reduce((sum, b) => sum + b.limit, 0)
-
-    // Total expenses this month
-    const monthlySpent = safeAllTransactions
-      .filter(tx => {
-        const txDate = new Date(tx.date)
-        return tx.type === 'expense' && txDate.getMonth() === currentMonth && txDate.getFullYear() === currentYear
-      })
-      .reduce((sum, tx) => sum + tx.amount, 0)
+    const monthlySpent = activeBudgets.reduce((sum, b) => {
+      const { start, end } = BudgetManagementService.getCurrentPeriod(b)
+      return sum + BudgetManagementService.calculateBudgetSpend(safeAllTransactions, b, start, end)
+    }, 0)
 
     const remaining = totalBudgetLimit - monthlySpent
     const percentUsed = totalBudgetLimit > 0 ? Math.min(100, (monthlySpent / totalBudgetLimit) * 100) : 0
@@ -344,11 +344,19 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
     })
     .reduce((sum, b) => sum + b.amount, 0)
 
-  // Primary Goal
-  const primaryGoal = safeGoals[0]
-  const goalProgress = primaryGoal 
-    ? Math.min(100, Math.round((primaryGoal.currentAmount / primaryGoal.targetAmount) * 100))
-    : 0
+  // Primary Goal — highest-priority goal that isn't finished yet (falls back
+  // to the first goal), with pacing so the card can show on-track status.
+  const primaryGoal = React.useMemo(() => {
+    const active = GoalService.sortByPriority(safeGoals.filter(g => g.currentAmount < g.targetAmount))
+    return active[0] || safeGoals[0]
+  }, [safeGoals])
+  const primaryGoalPacing = primaryGoal ? GoalService.getPacing(primaryGoal) : null
+  const goalProgress = primaryGoalPacing ? Math.round(primaryGoalPacing.progress) : 0
+
+  // Debt summary for the debt card
+  const debts = useLiveQuery(() => db.debts.toArray()) ?? []
+  const safeDebts = Array.isArray(debts) ? debts : []
+  const debtSummary = React.useMemo(() => DebtService.summarize(safeDebts), [safeDebts])
 
   // Lending summary
   const totalLent = metrics.totalDebt === 0 ? 0 : metrics.totalDebt
@@ -505,12 +513,32 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
           )
         })()}
 
-        {/* Budget bar */}
+        {/* Budget bar — tap to open Budgets */}
         {monthlyBudgetData.hasBudget && (
-          <div className="mt-4 pt-4 border-t border-border/60">
+          <button
+            onClick={() => onNavigateToTab('budgets')}
+            className="w-full text-left mt-4 pt-4 border-t border-border/60 group"
+            aria-label="View budgets"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[11px] text-muted-foreground">Monthly budget</p>
+              <span className="flex items-center gap-1 text-[11px] font-semibold text-foreground">
+                {Math.round(monthlyBudgetData.percentUsed)}% used
+                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+              </span>
+            </div>
+            {/* Spent of limit */}
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[11px] text-muted-foreground">Budget used</p>
-              <p className="text-[11px] font-semibold text-foreground">{Math.round(monthlyBudgetData.percentUsed)}%</p>
+              <p className="text-[12px] font-semibold text-foreground">
+                {formatCurrency(monthlyBudgetData.monthlySpent)}
+                <span className="text-muted-foreground font-normal"> of {formatCurrency(monthlyBudgetData.totalBudgetLimit)}</span>
+              </p>
+              <p className={cn("text-[11px] font-semibold",
+                monthlyBudgetData.remaining < 0 ? "text-rose-500" : "text-emerald-500")}>
+                {monthlyBudgetData.remaining < 0
+                  ? `${formatCurrency(Math.abs(monthlyBudgetData.remaining))} over`
+                  : `${formatCurrency(monthlyBudgetData.remaining)} left`}
+              </p>
             </div>
             <div className="h-2 rounded-full bg-secondary overflow-hidden">
               <div
@@ -519,7 +547,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
                 style={{ width: `${Math.min(100, monthlyBudgetData.percentUsed)}%` }}
               />
             </div>
-          </div>
+          </button>
         )}
       </div>{/* end report card */}
       </div>{/* end hero + report composition */}
@@ -588,7 +616,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
                 {/* Amount row */}
                 <div className="flex items-center gap-2">
                   <div className="flex-1 relative">
-                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-[15px] text-muted-foreground font-medium">₹</span>
+                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-[15px] text-muted-foreground font-medium">{getCurrencySymbol()}</span>
                     <input
                       ref={quickAddInputRef}
                       type="text"
@@ -648,9 +676,25 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
         </AnimatePresence>
       </div>
 
-      {/* === RECENT TRANSACTION === */}
+      {/* === RECENT TRANSACTIONS (lives on Home now) === */}
       <div className="card-surface p-5">
-        <h3 className="text-[15px] font-semibold text-foreground mb-4">Recent transaction</h3>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#7c6ffd] to-[#5b3df5] flex items-center justify-center shadow-fab">
+              <Clock className="w-[18px] h-[18px] text-white" strokeWidth={2.4} />
+            </div>
+            <h3 className="text-[16px] font-semibold tracking-tight text-foreground">Recent transactions</h3>
+          </div>
+          {safeTransactions.length > 0 && (
+            <button
+              onClick={() => onNavigateToTab('ledger')}
+              className="flex items-center gap-1 text-[12px] font-bold text-accent-foreground hover:opacity-80 transition-opacity"
+            >
+              View full
+              <ChevronRight className="w-3.5 h-3.5" strokeWidth={2.6} />
+            </button>
+          )}
+        </div>
 
         {safeTransactions.length > 0 ? (
           <div>
@@ -659,18 +703,18 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
               const acct = safeAccounts.find(a => a.id === tx.accountId)
               const d = new Date(tx.date)
               return (
-                <div key={tx.id} className="flex items-center gap-3 py-3 border-b border-border/50 last:border-0">
-                  <div className={cn("w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0", cfg.bg)}>
+                <div key={tx.id} className="flex items-center gap-3 py-3 border-b-2 border-border/40 last:border-0">
+                  <div className={cn("w-11 h-11 rounded-2xl flex items-center justify-center text-lg flex-shrink-0 ring-1 ring-black/5 dark:ring-white/5", cfg.bg)}>
                     {cfg.emoji}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-semibold text-foreground truncate">{tx.description || tx.category}</p>
+                    <p className="text-[14px] font-bold text-foreground truncate">{tx.description || tx.category}</p>
                     <p className="text-[12px] text-muted-foreground truncate capitalize">
                       {cfg.label} · {d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className={cn("text-[14px] font-bold", tx.type === 'income' ? "text-positive" : "text-negative")}>
+                    <p className={cn("text-[15px] font-bold", tx.type === 'income' ? "text-positive" : "text-negative")}>
                       {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
                     </p>
                     {acct && <p className="text-[11px] text-muted-foreground mt-0.5">{acct.name}</p>}
@@ -681,9 +725,9 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
 
             <button
               onClick={() => onNavigateToTab('ledger')}
-              className="w-full mt-4 py-3 rounded-2xl bg-secondary text-[13px] font-semibold text-foreground hover:bg-secondary/70 transition-colors"
+              className="w-full mt-4 py-3.5 rounded-2xl bg-gradient-to-r from-[#7c6ffd] to-[#5b3df5] text-[13px] font-bold text-white shadow-fab hover:opacity-95 active:scale-[0.98] transition-all"
             >
-              See all transactions
+              View full transactions
             </button>
           </div>
         ) : (
@@ -931,11 +975,13 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
                   <Card>
                     <CardContent className="pt-6">
                       <div className="flex items-start justify-between mb-4">
-                        <div className="flex-1">
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Savings Goal</p>
-                          <h3 className="text-lg font-bold text-foreground">{primaryGoal ? primaryGoal.title : 'No goals set'}</h3>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                            Savings Goal{safeGoals.length > 1 ? ` · ${safeGoals.length} total` : ''}
+                          </p>
+                          <h3 className="text-lg font-bold text-foreground truncate">{primaryGoal ? primaryGoal.title : 'No goals set'}</h3>
                         </div>
-                        <Target className="w-6 h-6 text-indigo-500" />
+                        <Target className="w-6 h-6 text-indigo-500 flex-shrink-0" />
                       </div>
                       {primaryGoal ? (
                         <div className="mb-3">
@@ -946,13 +992,55 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
                           <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
                             <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${goalProgress}%` }} />
                           </div>
-                          <p className="text-[10px] text-muted-foreground mt-2">Target: {new Date(primaryGoal.targetDate).toLocaleDateString()}</p>
+                          {primaryGoalPacing?.requiredPerMonth ? (
+                            <p className="text-[10px] text-muted-foreground mt-2">
+                              Save {formatCurrency(primaryGoalPacing.requiredPerMonth)}/mo
+                              {primaryGoalPacing.status === 'on_track' ? ' · on track' : primaryGoalPacing.status === 'behind' ? ' · behind pace' : primaryGoalPacing.status === 'at_risk' ? ' · at risk' : ''}
+                            </p>
+                          ) : primaryGoal.targetDate ? (
+                            <p className="text-[10px] text-muted-foreground mt-2">Target: {new Date(primaryGoal.targetDate).toLocaleDateString()}</p>
+                          ) : null}
                         </div>
                       ) : (
                         <p className="text-[12px] text-muted-foreground mb-3">Set a savings goal to track your progress toward something meaningful.</p>
                       )}
                       <button onClick={() => onNavigateToTab('goals')} className="w-full py-2.5 rounded-xl bg-secondary text-foreground text-xs font-semibold hover:bg-secondary/70 transition-colors">
                         {primaryGoal ? 'View Goals' : 'Create a Goal'} →
+                      </button>
+                    </CardContent>
+                  </Card>
+                </DashReorderCard>
+              )
+
+            case 'debt':
+              if (safeDebts.length === 0) return null
+              return (
+                <DashReorderCard key="debt" cardId="debt">
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Debt Payoff</p>
+                          <h3 className="text-2xl font-bold text-foreground">{formatCurrency(debtSummary.totalBalance)}</h3>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {debtSummary.activeCount} active · {debtSummary.avgInterestRate.toFixed(1)}% avg rate
+                          </p>
+                        </div>
+                        <TrendingDown className="w-6 h-6 text-rose-500 flex-shrink-0" />
+                      </div>
+                      {debtSummary.totalOriginal > 0 && (
+                        <div className="mb-3">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-xs text-muted-foreground">{formatCurrency(debtSummary.totalPaid)} paid off</span>
+                            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{Math.round(debtSummary.overallProgress)}%</span>
+                          </div>
+                          <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
+                            <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${Math.min(100, debtSummary.overallProgress)}%` }} />
+                          </div>
+                        </div>
+                      )}
+                      <button onClick={() => onNavigateToTab('debtplanner')} className="w-full py-2.5 rounded-xl bg-secondary text-foreground text-xs font-semibold hover:bg-secondary/70 transition-colors">
+                        {debtSummary.activeCount > 0 ? 'View Payoff Plan' : 'Review Debts'} →
                       </button>
                     </CardContent>
                   </Card>
