@@ -23,7 +23,8 @@ type Mode = 'hour' | 'minute'
 /**
  * Material-style clock time picker with a flip-digit display, AM/PM toggle,
  * an analog dial for choosing the hour / minute, and a keyboard-entry fallback.
- * Rendered as a centered modal dialog to mirror the reference design.
+ * Rendered as a centered modal dialog. Colors use theme tokens so it follows
+ * light/dark mode.
  */
 export function ClockTimePicker({ open, value, onConfirm, onCancel, accent }: ClockTimePickerProps) {
   const [hour, setHour] = useState(11) // 1-12
@@ -129,9 +130,9 @@ export function ClockTimePicker({ open, value, onConfirm, onCancel, accent }: Cl
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ type: 'spring', damping: 26, stiffness: 320 }}
-            className="relative w-full max-w-[320px] rounded-3xl bg-[#2a2a2e] p-5 shadow-2xl"
+            className="relative w-full max-w-[320px] rounded-3xl bg-popover text-popover-foreground border border-border p-5 shadow-elevated"
           >
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-white/60 mb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">
               Select time
             </p>
 
@@ -147,7 +148,7 @@ export function ClockTimePicker({ open, value, onConfirm, onCancel, accent }: Cl
                 onCommit={(v) => setHour(v)}
                 onDone={() => setMode('minute')}
               />
-              <span className="flex items-center text-4xl font-bold text-white/80">:</span>
+              <span className="flex items-center text-4xl font-bold text-muted-foreground">:</span>
               <FlipField
                 active={mode === 'minute'}
                 accent={accentColor}
@@ -158,7 +159,7 @@ export function ClockTimePicker({ open, value, onConfirm, onCancel, accent }: Cl
                 onCommit={(v) => setMinute(v)}
               />
 
-              <div className="flex flex-col gap-0 overflow-hidden rounded-xl border border-white/15 ml-1">
+              <div className="flex flex-col gap-0 overflow-hidden rounded-xl border border-border ml-1">
                 {(['AM', 'PM'] as const).map((p) => (
                   <button
                     key={p}
@@ -166,7 +167,7 @@ export function ClockTimePicker({ open, value, onConfirm, onCancel, accent }: Cl
                     onClick={() => setPeriod(p)}
                     className={cn(
                       'w-14 flex-1 px-2 text-sm font-semibold transition-colors',
-                      period === p ? 'text-white' : 'text-white/55 hover:text-white/80'
+                      period === p ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
                     )}
                     style={period === p ? { backgroundColor: hexToRgba(accentColor, 0.28) } : undefined}
                   >
@@ -191,7 +192,7 @@ export function ClockTimePicker({ open, value, onConfirm, onCancel, accent }: Cl
                   onPointerDown={onPointerDown}
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
-                  className="relative h-[232px] w-[232px] touch-none select-none rounded-full bg-[#3a3a3f]"
+                  className="relative h-[232px] w-[232px] touch-none select-none rounded-full bg-secondary"
                 >
                   {/* Center pivot */}
                   <div
@@ -232,7 +233,7 @@ export function ClockTimePicker({ open, value, onConfirm, onCancel, accent }: Cl
                         key={num}
                         className={cn(
                           'absolute flex h-9 w-9 items-center justify-center rounded-full text-[15px] font-medium transition-colors',
-                          selected ? 'text-white' : 'text-white/80'
+                          selected ? 'text-white' : 'text-foreground'
                         )}
                         style={{
                           left: `calc(50% + ${x}px)`,
@@ -254,7 +255,7 @@ export function ClockTimePicker({ open, value, onConfirm, onCancel, accent }: Cl
               <button
                 type="button"
                 onClick={() => setKeyboard((k) => !k)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white transition-colors"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
                 aria-label="Toggle keyboard entry"
               >
                 <Keyboard className="h-5 w-5" />
@@ -263,7 +264,7 @@ export function ClockTimePicker({ open, value, onConfirm, onCancel, accent }: Cl
                 <button
                   type="button"
                   onClick={onCancel}
-                  className="text-sm font-semibold uppercase tracking-wide text-white/70 hover:text-white transition-colors"
+                  className="text-sm font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Cancel
                 </button>
@@ -353,7 +354,7 @@ function FlipField({
       aria-label={max === 12 ? 'Hour' : 'Minute'}
       className={cn(
         'h-[72px] w-[84px] rounded-xl text-center text-5xl font-bold tabular-nums transition-colors focus:outline-none',
-        active ? 'text-white ring-2' : 'bg-white/10 text-white/80'
+        active ? 'text-foreground ring-2' : 'bg-secondary text-muted-foreground'
       )}
       style={active ? { backgroundColor: hexToRgba(accent, 0.3), ['--tw-ring-color' as string]: accent } : undefined}
     />
@@ -382,9 +383,9 @@ function KeyboardEntry({
           const v = Math.min(12, Math.max(1, Number(e.target.value) || 1))
           onHour(v)
         }}
-        className="h-16 w-20 rounded-xl bg-white/10 text-center text-3xl font-bold text-white focus:outline-none focus:ring-2 focus:ring-white/30"
+        className="h-16 w-20 rounded-xl bg-secondary text-center text-3xl font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
       />
-      <span className="text-3xl font-bold text-white/70">:</span>
+      <span className="text-3xl font-bold text-muted-foreground">:</span>
       <input
         type="number"
         min={0}
@@ -394,7 +395,7 @@ function KeyboardEntry({
           const v = Math.min(59, Math.max(0, Number(e.target.value) || 0))
           onMinute(v)
         }}
-        className="h-16 w-20 rounded-xl bg-white/10 text-center text-3xl font-bold text-white focus:outline-none focus:ring-2 focus:ring-white/30"
+        className="h-16 w-20 rounded-xl bg-secondary text-center text-3xl font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
       />
     </div>
   )

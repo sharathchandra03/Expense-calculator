@@ -1,0 +1,12 @@
+Saved for later — promo banner removed from quick-add-modal.tsx on 2026-10-19.
+Original location: src/components/modules/quick-add-modal.tsx, top of the
+Add-transaction scroll area (just inside <div className="flex-1 overflow-y-auto px-5 pb-32">).
+Paste this block back in to restore the banner.
+
+{/* Promo banner */}
+<div className="rounded-2xl bg-secondary border border-primary/15 p-4 mb-5">
+  <p className="text-[13px] leading-relaxed text-muted-foreground">
+    Say what you spent or type it in your own words. You can always use this form to add unlimited expenses for free.
+  </p>
+  <button className="mt-1.5 text-[13px] font-bold text-primary">Explore Pro</button>
+</div>

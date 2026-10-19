@@ -1,23 +1,26 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Clock, Calendar, Wallet, Tag, RefreshCw, Crown, ChevronRight,
-  BarChart3, LayoutDashboard, FileBarChart, Settings as SettingsIcon,
+  Clock, Wallet, Tag, RefreshCw, Crown, ChevronRight,
+  BarChart3, LayoutDashboard, PieChart, Settings as SettingsIcon,
   HelpCircle, Bell, ShieldCheck, Pencil, AlertTriangle,
   Users, CreditCard, Camera, TrendingUp, Landmark, Upload, HeartHandshake, Target, TrendingDown,
   Megaphone, Star, MessageSquare, Info, LogOut, CalendarDays, SlidersHorizontal, Rows3,
+  CalendarClock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, getProfile } from '@/db/schema'
+import { db, getProfile, saveProfile } from '@/db/schema'
 import { useAuth } from '@/providers/AuthProvider'
 import { isOperatorEmail } from '@/lib/admin-config'
 import type { TabType } from '@/components/layout/bottom-nav'
 import { getLastBackup, type LastBackupInfo } from '@/services/DataExportService'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/toast-notification'
+import { SyncCard } from '@/components/ui/sync-card'
+import { X, Trash2, Camera as CameraIcon, Check } from 'lucide-react'
 
 // Shareable app details used by "Invite a friend" and "Rate app".
 const APP_NAME = 'PennyFlow'
@@ -43,7 +46,7 @@ interface GridItem {
 // Primary feature grid (2 columns) — mirrors the reference "Transactions / Scheduled" style.
 const FEATURE_GRID: GridItem[] = [
   { id: 'ledger', label: 'Transactions', icon: Clock, color: 'text-blue-400' },
-  { id: 'bills', label: 'Scheduled', icon: Calendar, color: 'text-teal-400' },
+  { id: 'plannedpayments', label: 'Planned Payments', icon: CalendarClock, color: 'text-violet-400' },
   { id: 'budgets', label: 'Budgets', icon: Wallet, color: 'text-pink-400' },
   { id: 'categories', label: 'Categories', icon: Tag, color: 'text-emerald-400' },
   { id: 'subscriptions', label: 'Subscriptions', icon: RefreshCw, color: 'text-sky-400' },
@@ -54,7 +57,7 @@ const FEATURE_GRID: GridItem[] = [
 const VIEW_ITEMS: GridItem[] = [
   { id: 'dashboard', label: 'Home', icon: LayoutDashboard, color: 'text-foreground' },
   { id: 'analytics', label: 'Analysis', icon: BarChart3, color: 'text-foreground' },
-  { id: 'reports', label: 'Reports', icon: FileBarChart, color: 'text-foreground' },
+  { id: 'statistics', label: 'Statistics', icon: PieChart, color: 'text-foreground' },
 ]
 
 // Transaction "Views" row (3 columns) — Day / Calendar / Custom views of transactions.
@@ -86,6 +89,54 @@ export function MorePage({ onNavigateToTab, onBackupClick, backupVersion }: More
   const [lastBackup, setLastBackup] = useState<LastBackupInfo | null>(() => getLastBackup())
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const firstBackupSync = React.useRef(true)
+
+  // Inline profile editing (name + avatar) — previously only possible in Settings.
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [draftName, setDraftName] = useState('')
+  const [draftAvatar, setDraftAvatar] = useState<string | undefined>(undefined)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const avatarInputRef = React.useRef<HTMLInputElement>(null)
+
+  // Inline cloud sync / sign-in sheet — previously only reachable from Settings.
+  const [isSyncOpen, setIsSyncOpen] = useState(false)
+
+  const openEditProfile = () => {
+    setDraftName(profileName || '')
+    setDraftAvatar(profileAvatar)
+    setIsEditOpen(true)
+  }
+
+  const handleAvatarPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file later
+    if (!file) return
+    setUploadingAvatar(true)
+    try {
+      const { compressImageToBase64 } = await import('@/lib/receipt-utils')
+      const base64 = await compressImageToBase64(file)
+      setDraftAvatar(base64)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not load that image')
+    } finally {
+      setUploadingAvatar(false)
+    }
+  }
+
+  const handleSaveProfile = async () => {
+    setSavingProfile(true)
+    try {
+      await saveProfile({ name: draftName.trim(), avatar: draftAvatar })
+      setProfileName(draftName.trim())
+      setProfileAvatar(draftAvatar)
+      setIsEditOpen(false)
+      showToast('Profile updated')
+    } catch {
+      showToast('Could not save profile')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
 
   // Invite a friend — use the native share sheet when available, else copy to clipboard.
   const handleInvite = async () => {
@@ -184,7 +235,7 @@ export function MorePage({ onNavigateToTab, onBackupClick, backupVersion }: More
             <div className="flex items-center gap-2">
               <h2 className="truncate text-[17px] font-bold text-foreground">{displayName}</h2>
               <button
-                onClick={() => onNavigateToTab('settings')}
+                onClick={openEditProfile}
                 className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-secondary transition-colors"
                 aria-label="Edit profile"
               >
@@ -192,7 +243,7 @@ export function MorePage({ onNavigateToTab, onBackupClick, backupVersion }: More
               </button>
             </div>
             <button
-              onClick={() => onNavigateToTab('settings')}
+              onClick={() => setIsSyncOpen(true)}
               className="truncate text-left text-[13px] text-muted-foreground hover:text-foreground transition-colors"
             >
               {subtitle}
@@ -201,7 +252,7 @@ export function MorePage({ onNavigateToTab, onBackupClick, backupVersion }: More
 
           {/* Security / backup shield */}
           <button
-            onClick={() => onNavigateToTab('settings')}
+            onClick={() => setIsSyncOpen(true)}
             className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-secondary hover:bg-accent transition-colors"
             aria-label="Security & backup"
           >
@@ -346,19 +397,21 @@ export function MorePage({ onNavigateToTab, onBackupClick, backupVersion }: More
             icon={Info}
             label="About app"
             onClick={() => onNavigateToTab('about')}
-            last={!isOperator && !user}
           />
           {isOperator && (
             <ListRow
               icon={ShieldCheck}
               label="Support Inbox"
               onClick={() => onNavigateToTab('supportadmin')}
-              last={!user}
             />
           )}
-          {user && (
-            <ListRow icon={LogOut} label="Sign out" onClick={() => setShowSignOutConfirm(true)} last />
-          )}
+          <ListRow
+            icon={LogOut}
+            label="Sign out"
+            onClick={() => setShowSignOutConfirm(true)}
+            danger
+            last
+          />
         </div>
       </motion.div>
 
@@ -373,7 +426,206 @@ export function MorePage({ onNavigateToTab, onBackupClick, backupVersion }: More
         onConfirm={handleSignOut}
         onCancel={() => setShowSignOutConfirm(false)}
       />
+
+      {/* Edit profile sheet — change name & upload a photo inline */}
+      <EditProfileSheet
+        isOpen={isEditOpen}
+        name={draftName}
+        avatar={draftAvatar}
+        saving={savingProfile}
+        uploading={uploadingAvatar}
+        avatarInputRef={avatarInputRef}
+        onNameChange={setDraftName}
+        onPickPhoto={() => avatarInputRef.current?.click()}
+        onRemovePhoto={() => setDraftAvatar(undefined)}
+        onAvatarInput={handleAvatarPick}
+        onClose={() => setIsEditOpen(false)}
+        onSave={handleSaveProfile}
+      />
+
+      {/* Cloud sync / sign-in sheet — back up without leaving this page */}
+      <SyncSheet isOpen={isSyncOpen} onClose={() => setIsSyncOpen(false)} />
     </div>
+  )
+}
+
+/* ── Edit profile sheet ──────────────────────────────────────────── */
+function EditProfileSheet({
+  isOpen,
+  name,
+  avatar,
+  saving,
+  uploading,
+  avatarInputRef,
+  onNameChange,
+  onPickPhoto,
+  onRemovePhoto,
+  onAvatarInput,
+  onClose,
+  onSave,
+}: {
+  isOpen: boolean
+  name: string
+  avatar?: string
+  saving: boolean
+  uploading: boolean
+  avatarInputRef: React.RefObject<HTMLInputElement | null>
+  onNameChange: (v: string) => void
+  onPickPhoto: () => void
+  onRemovePhoto: () => void
+  onAvatarInput: (e: React.ChangeEvent<HTMLInputElement>) => void
+  onClose: () => void
+  onSave: () => void
+}) {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          className="absolute inset-0 z-50 flex items-end justify-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={onClose} />
+
+          {/* Sheet */}
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 380, damping: 36 }}
+            className="relative w-full rounded-t-[1.8rem] bg-card border-t border-border/60 p-5 pb-8 shadow-elevated"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Edit profile"
+          >
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border" />
+            <div className="mb-5 flex items-center justify-between">
+              <h3 className="text-[18px] font-bold text-foreground">Edit profile</h3>
+              <button
+                onClick={onClose}
+                aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Avatar */}
+            <div className="flex flex-col items-center gap-3">
+              <button
+                onClick={onPickPhoto}
+                disabled={uploading}
+                className="relative h-24 w-24 overflow-hidden rounded-full bg-secondary flex items-center justify-center group disabled:opacity-60"
+                aria-label="Upload photo"
+              >
+                {avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatar} alt="Profile" className="h-full w-full object-cover" />
+                ) : (
+                  <Users className="h-10 w-10 text-muted-foreground" strokeWidth={1.6} />
+                )}
+                <span className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {uploading ? (
+                    <RefreshCw className="h-6 w-6 text-white animate-spin" />
+                  ) : (
+                    <CameraIcon className="h-6 w-6 text-white" />
+                  )}
+                </span>
+              </button>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={onPickPhoto}
+                  disabled={uploading}
+                  className="text-[13px] font-semibold text-primary hover:opacity-80 disabled:opacity-50"
+                >
+                  {uploading ? 'Uploading…' : avatar ? 'Change photo' : 'Upload photo'}
+                </button>
+                {avatar && (
+                  <button
+                    onClick={onRemovePhoto}
+                    className="flex items-center gap-1 text-[13px] font-semibold text-destructive hover:opacity-80"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Remove
+                  </button>
+                )}
+              </div>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={onAvatarInput}
+              />
+            </div>
+
+            {/* Name */}
+            <div className="mt-6">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Name</label>
+              <input
+                value={name}
+                onChange={(e) => onNameChange(e.target.value)}
+                maxLength={60}
+                placeholder="Your name"
+                className="mt-1.5 h-12 w-full rounded-2xl border border-border/60 bg-background px-4 text-[15px] font-medium text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </div>
+
+            {/* Save */}
+            <button
+              onClick={onSave}
+              disabled={saving || uploading}
+              className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-primary-foreground font-bold text-[15px] hover:opacity-90 active:scale-[0.99] transition disabled:opacity-50"
+            >
+              {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+/* ── Cloud sync / sign-in sheet ──────────────────────────────────── */
+function SyncSheet({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          className="absolute inset-0 z-50 flex items-end justify-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={onClose} />
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 380, damping: 36 }}
+            className="relative w-full rounded-t-[1.8rem] bg-card border-t border-border/60 p-5 pb-8 shadow-elevated"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Cloud sync"
+          >
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border" />
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-[18px] font-bold text-foreground">Cloud sync &amp; backup</h3>
+              <button
+                onClick={onClose}
+                aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <SyncCard />
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 
@@ -387,7 +639,7 @@ function GridCard({ item, onClick }: { item: GridItem; onClick: () => void }) {
       className="flex items-center gap-3 rounded-2xl bg-card border border-border/60 px-4 py-4 text-left hover:bg-accent active:scale-[0.98] transition-all"
     >
       <Icon className={cn('h-5 w-5 flex-shrink-0', item.color)} strokeWidth={1.9} />
-      <span className="truncate text-[14px] font-medium text-foreground">{item.label}</span>
+      <span className="min-w-0 flex-1 text-[14px] font-medium leading-tight text-foreground">{item.label}</span>
     </button>
   )
 }
@@ -398,12 +650,14 @@ function ListRow({
   onClick,
   badge,
   last,
+  danger,
 }: {
   icon: React.ElementType
   label: string
   onClick: () => void
   badge?: string
   last?: boolean
+  danger?: boolean
 }) {
   return (
     <button
@@ -413,14 +667,22 @@ function ListRow({
         !last && 'border-b border-border/60'
       )}
     >
-      <Icon className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" strokeWidth={1.8} />
-      <span className="flex-1 text-[14px] font-medium text-foreground">{label}</span>
+      <Icon
+        className={cn(
+          'h-[18px] w-[18px] flex-shrink-0',
+          danger ? 'text-red-500' : 'text-muted-foreground'
+        )}
+        strokeWidth={1.8}
+      />
+      <span className={cn('flex-1 text-[14px] font-medium', danger ? 'text-red-500' : 'text-foreground')}>
+        {label}
+      </span>
       {badge && (
         <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-destructive text-white text-[10px] font-bold flex items-center justify-center leading-none">
           {badge}
         </span>
       )}
-      <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+      <ChevronRight className={cn('h-4 w-4 flex-shrink-0', danger ? 'text-red-500' : 'text-muted-foreground')} />
     </button>
   )
 }

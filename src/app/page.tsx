@@ -6,9 +6,11 @@ import { seedDatabaseIfEmpty } from '@/db/schema'
 import { BottomNav, TabType } from '@/components/layout/bottom-nav'
 import { Dashboard } from '@/components/modules/dashboard'
 import { RecurringTransactionService } from '@/services/RecurringTransactionService'
+import { PlannedPaymentService } from '@/services/PlannedPaymentService'
 import { NotificationGenerator } from '@/services/NotificationGenerator'
 import { GoalService } from '@/services/GoalService'
 import { AnimatePresence, motion } from 'framer-motion'
+import { RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // Code-split all secondary modules (loaded on demand)
@@ -21,7 +23,6 @@ const Onboarding = dynamic(() => import('@/components/modules/onboarding').then(
 const QuickAddModal = dynamic(() => import('@/components/modules/quick-add-modal').then(m => ({ default: m.QuickAddModal })), { ssr: false })
 const BillsManager = dynamic(() => import('@/components/modules/bills-manager').then(m => ({ default: m.BillsManager })), { ssr: false })
 const BudgetManager = dynamic(() => import('@/components/modules/budget-manager').then(m => ({ default: m.BudgetManager })), { ssr: false })
-const FinancialReports = dynamic(() => import('@/components/modules/financial-reports').then(m => ({ default: m.FinancialReports })), { ssr: false })
 const NotificationsCenter = dynamic(() => import('@/components/modules/notifications-center').then(m => ({ default: m.NotificationsCenter })), { ssr: false })
 const GoalsDashboard = dynamic(() => import('@/components/modules/goals-dashboard').then(m => ({ default: m.GoalsDashboard })), { ssr: false })
 const InvestmentTracker = dynamic(() => import('@/components/modules/investment-tracker').then(m => ({ default: m.InvestmentTracker })), { ssr: false })
@@ -44,6 +45,8 @@ const BackupSheet = dynamic(() => import('@/components/modules/backup-sheet').th
 const DayView = dynamic(() => import('@/components/modules/day-view').then(m => ({ default: m.DayView })), { ssr: false })
 const CalendarViewPage = dynamic(() => import('@/components/modules/calendar-view').then(m => ({ default: m.CalendarViewPage })), { ssr: false })
 const CustomView = dynamic(() => import('@/components/modules/custom-view').then(m => ({ default: m.CustomView })), { ssr: false })
+const PlannedPayments = dynamic(() => import('@/components/modules/planned-payments').then(m => ({ default: m.PlannedPayments })), { ssr: false })
+const Statistics = dynamic(() => import('@/components/modules/statistics').then(m => ({ default: m.Statistics })), { ssr: false })
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard')
@@ -53,6 +56,7 @@ export default function Home() {
   const [backupVersion, setBackupVersion] = useState(0)
   const [isFirstTime, setIsFirstTime] = useState(true)
   const [dbReady, setDbReady] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
   const scrollRef = React.useRef<HTMLDivElement>(null)
 
   // Browser history management for mobile back button
@@ -104,12 +108,17 @@ export default function Home() {
         RecurringTransactionService.processRecurrences()
           .catch(() => {})
           .finally(() => {
-            // Run goal auto-save (monthly, idempotent) then regenerate alerts so
-            // any auto-save / goal progress is reflected in notifications.
-            GoalService.runAutoSave()
+            // Auto-execute any due planned payments (replaces the manual-only
+            // Bills flow), then run goal auto-save, then regenerate alerts so all
+            // newly created transactions/balances are reflected in notifications.
+            PlannedPaymentService.processDue()
               .catch(() => {})
               .finally(() => {
-                NotificationGenerator.generateAll().catch(() => {})
+                GoalService.runAutoSave()
+                  .catch(() => {})
+                  .finally(() => {
+                    NotificationGenerator.generateAll().catch(() => {})
+                  })
               })
           })
       } catch {
@@ -143,9 +152,47 @@ export default function Home() {
       window.history.pushState({ tab: 'accounts' }, '', '?tab=accounts')
     }
 
-    // Register Service Worker for PWA in production only
+    // Register Service Worker for PWA in production only.
+    // Auto-update: when a new SW takes control (after a deploy), reload the tab
+    // once so the user gets the latest version without a manual refresh.
     if (process.env.NODE_ENV === 'production' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {})
+      // Reload exactly once when the active worker changes to the new one.
+      // Show a brief "updating" toast first so a mid-use reload isn't jarring.
+      let hasReloadedForUpdate = false
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (hasReloadedForUpdate) return
+        hasReloadedForUpdate = true
+        setIsUpdating(true)
+        // Give the toast ~1.2s of screen time, then reload into the new version.
+        window.setTimeout(() => window.location.reload(), 1200)
+      })
+
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((registration) => {
+          // A new worker was found — wait until it finishes installing, then
+          // ask it to skip waiting so it activates and takes over immediately.
+          const promoteWaitingWorker = (worker: ServiceWorker | null) => {
+            if (!worker) return
+            worker.addEventListener('statechange', () => {
+              // Only force-activate if there is already a controller (i.e. this
+              // is an update, not the very first install).
+              if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+                worker.postMessage({ type: 'SKIP_WAITING' })
+              }
+            })
+          }
+
+          // If an update is already waiting when we register, promote it.
+          if (registration.waiting && navigator.serviceWorker.controller) {
+            registration.waiting.postMessage({ type: 'SKIP_WAITING' })
+          }
+
+          registration.addEventListener('updatefound', () => {
+            promoteWaitingWorker(registration.installing)
+          })
+        })
+        .catch(() => {})
     }
 
     // Global keyboard shortcut for search (Cmd+K or Ctrl+K)
@@ -209,6 +256,8 @@ export default function Home() {
           return <AccountManager key="accounts" />
         case 'analytics':
           return <Analytics key="analytics" />
+        case 'statistics':
+          return <Statistics key="statistics" />
         case 'budgets':
           return <BudgetManager key="budgets" />
         case 'bills':
@@ -234,7 +283,8 @@ export default function Home() {
         case 'assets':
           return <AssetsTracker key="assets" />
         case 'reports':
-          return <FinancialReports key="reports" />
+          // Reports are now part of Statistics; keep the route for back-compat.
+          return <Statistics key="reports" />
         case 'notifications':
           return <NotificationsCenter key="notifications" />
         case 'csvimport':
@@ -259,6 +309,8 @@ export default function Home() {
           return <CalendarViewPage key="calendarview" onNavigateToTab={(tab) => handleTabChange(tab)} />
         case 'customview':
           return <CustomView key="customview" onNavigateToTab={(tab) => handleTabChange(tab)} />
+        case 'plannedpayments':
+          return <PlannedPayments key="plannedpayments" onNavigateToTab={(tab) => handleTabChange(tab as any)} />
         default:
           return <Dashboard key="dashboard" onNavigateToTab={(tab) => handleTabChange(tab)} />
       }
@@ -334,6 +386,26 @@ export default function Home() {
           isFirstTime={isFirstTime}
           onComplete={() => setIsFirstTime(false)}
         />
+
+        {/* App-update toast: shown briefly before the tab reloads into the new version */}
+        <AnimatePresence>
+          {isUpdating && (
+            <motion.div
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 24, scale: 0.96 }}
+              transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
+              className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-foreground text-background shadow-elevated"
+              role="status"
+              aria-live="polite"
+            >
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span className="text-[13px] font-semibold whitespace-nowrap">
+                Updating to latest version…
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )

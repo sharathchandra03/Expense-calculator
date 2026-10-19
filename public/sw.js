@@ -2,7 +2,7 @@
 // This SW provides offline support without interfering with user data.
 // IndexedDB and localStorage are NEVER touched by the service worker.
 
-const CACHE_NAME = 'pennyflow-app-v3';
+const CACHE_NAME = 'pennyflow-app-v4';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -19,6 +19,14 @@ self.addEventListener('install', (event) => {
   );
   // Activate immediately without waiting for old SW to stop
   self.skipWaiting();
+});
+
+// Allow the page to tell a waiting worker to activate right away.
+// The client posts { type: 'SKIP_WAITING' } when it detects an update.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // Activate: clean up old cache versions only
@@ -46,6 +54,19 @@ self.addEventListener('fetch', (event) => {
   // Skip API/supabase requests — never cache those
   const url = new URL(event.request.url);
   if (url.hostname.includes('supabase') || url.hostname.includes('google')) return;
+
+  // HTML navigations: always go to the network and DON'T cache the document.
+  // Caching the HTML is what makes a tab serve stale markup that points at
+  // old, deleted /_next/ asset chunks after a deploy. Fall back to a cached
+  // shell only when the network is unavailable (offline support).
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() =>
+        caches.match(event.request).then((cached) => cached || caches.match('/'))
+      )
+    );
+    return;
+  }
 
   event.respondWith(
     fetch(event.request)

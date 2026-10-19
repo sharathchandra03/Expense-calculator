@@ -51,6 +51,18 @@ const renderDonutLabel = (props: {
   )
 }
 
+/* Picks a font-size class based on the length of the formatted amount string,
+ * so large values (lakhs / crores) shrink to fit instead of overflowing and
+ * colliding. Font weight stays constant so thickness looks uniform across sizes. */
+const amountSizeClass = (text: string): string => {
+  const len = text.length
+  if (len <= 10) return 'text-[26px]'
+  if (len <= 12) return 'text-[22px]'
+  if (len <= 14) return 'text-[19px]'
+  if (len <= 16) return 'text-[16px]'
+  return 'text-[14px]'
+}
+
 const toYMD = (d: Date) => {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -315,16 +327,24 @@ export function Analytics() {
         {/* soft color glows */}
         <div className="pointer-events-none absolute -top-10 -left-10 w-40 h-40 rounded-full bg-negative/10 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-10 -right-10 w-40 h-40 rounded-full bg-positive/10 blur-3xl" />
-        <div className="relative flex items-start justify-between">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-negative">Spending</p>
-            <p className="text-[26px] font-bold tracking-tight text-foreground mt-1">{formatCurrency(summary.spending)}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-positive">Income</p>
-            <p className="text-[26px] font-bold tracking-tight text-foreground mt-1">{formatCurrency(summary.income)}</p>
-          </div>
-        </div>
+        {(() => {
+          const spendStr = formatCurrency(summary.spending)
+          const incomeStr = formatCurrency(summary.income)
+          // Size both numbers off the longer string so they stay visually balanced
+          const sizeClass = amountSizeClass(spendStr.length >= incomeStr.length ? spendStr : incomeStr)
+          return (
+            <div className="relative flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-negative">Spending</p>
+                <p className={cn('font-bold tracking-tight text-foreground mt-1 tabular-nums truncate', sizeClass)}>{spendStr}</p>
+              </div>
+              <div className="min-w-0 flex-1 text-right">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-positive">Income</p>
+                <p className={cn('font-bold tracking-tight text-foreground mt-1 tabular-nums truncate', sizeClass)}>{incomeStr}</p>
+              </div>
+            </div>
+          )
+        })()}
         <div className="relative mt-5 flex items-center justify-between rounded-2xl bg-secondary/60 px-4 py-3.5">
           <span className="text-[14px] font-semibold text-muted-foreground">Net Balance</span>
           <span className={cn('text-[18px] font-extrabold', summary.net >= 0 ? 'text-foreground' : 'text-negative')}>

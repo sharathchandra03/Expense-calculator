@@ -3,7 +3,6 @@
 import React, { useState, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, Goal } from '@/db/schema'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, getCurrencySymbol, cn } from '@/lib/utils'
 import { Plus, Target, Trash2, X, Edit2, History, Zap, TrendingUp, AlertTriangle, Check } from 'lucide-react'
@@ -14,7 +13,6 @@ import { useUndo } from '@/components/ui/undo-toast'
 import { useToast } from '@/components/ui/toast-notification'
 import { Button } from '@/components/ui/button'
 import { AccountSelect } from '@/components/ui/account-select'
-import { PageHeader } from '@/components/ui/page-header'
 import { GoalService, GoalPacing } from '@/services/GoalService'
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -33,7 +31,6 @@ const STATUS_BADGE: Record<GoalPacing['status'], { label: string; cls: string; i
 
 /** Round quick-add amounts to currency-appropriate "nice" steps. */
 function quickSteps(currency: string): { label: string; value: number }[] {
-  // JPY/KRW/INR use larger whole-number steps; most others are smaller.
   if (currency === 'JPY' || currency === 'KRW') {
     return [{ label: '+1K', value: 1000 }, { label: '+5K', value: 5000 }, { label: '+10K', value: 10000 }]
   }
@@ -121,32 +118,126 @@ export function GoalsDashboard() {
   }
 
   return (
-    <div className="flex flex-col space-y-5 pb-6">
-      <PageHeader
-        title="Savings Goals"
-        subtitle={`${summary.active} active • ${summary.achieved} achieved${summary.monthlyCommitment > 0 ? ` • ${formatCurrency(summary.monthlyCommitment)}/mo auto-saving` : ''}`}
-      />
-
-      {/* Summary */}
-      <div className="grid grid-cols-2 gap-3">
-        <Card className="bg-secondary/50">
-          <CardContent className="pt-4">
-            <p className="text-[10px] font-semibold uppercase text-muted-foreground">Total Target</p>
-            <p className="text-lg font-bold mt-1">{formatCurrency(summary.totalTarget)}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-secondary/50">
-          <CardContent className="pt-4">
-            <p className="text-[10px] font-semibold uppercase text-muted-foreground">Total Saved</p>
-            <p className="text-lg font-bold mt-1">{formatCurrency(summary.totalSaved)}</p>
-            <div className="h-1.5 rounded-full bg-secondary overflow-hidden mt-2">
-              <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, summary.overallProgress)}%` }} />
-            </div>
-          </CardContent>
-        </Card>
+    <div className="flex flex-col space-y-5 pb-8">
+      {/* ===== Header ===== */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-foreground">Savings Goals</h1>
+          <p className="text-[13px] text-muted-foreground mt-0.5">
+            {summary.active} active • {summary.achieved} achieved
+            {summary.monthlyCommitment > 0 ? ` • ${formatCurrency(summary.monthlyCommitment)}/mo auto` : ''}
+          </p>
+        </div>
+        {!isAdding && (
+          <button
+            onClick={() => setIsAdding(true)}
+            className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm hover:opacity-90 transition-opacity"
+            aria-label="New goal"
+          >
+            <Plus className="w-5 h-5" strokeWidth={2.4} />
+          </button>
+        )}
       </div>
 
-      {/* Goals List */}
+      {/* ===== Overall summary ===== */}
+      <div className="relative rounded-[1.6rem] bg-card border border-border/70 p-5 shadow-card overflow-hidden">
+        <div className="pointer-events-none absolute -top-10 -right-10 w-40 h-40 rounded-full bg-primary/10 blur-3xl" />
+        <div className="relative flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Total saved</p>
+            <p className="text-[26px] font-bold tracking-tight text-foreground mt-1 tabular-nums truncate">{formatCurrency(summary.totalSaved)}</p>
+          </div>
+          <div className="min-w-0 flex-1 text-right">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Target</p>
+            <p className="text-[26px] font-bold tracking-tight text-foreground mt-1 tabular-nums truncate">{formatCurrency(summary.totalTarget)}</p>
+          </div>
+        </div>
+        <div className="relative mt-5">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-[12px] font-semibold text-muted-foreground">Overall progress</span>
+            <span className="text-[13px] font-extrabold text-foreground">{Math.round(summary.overallProgress)}%</span>
+          </div>
+          <div className="h-2.5 rounded-full bg-secondary overflow-hidden">
+            <motion.div
+              className="h-full rounded-full bg-primary"
+              initial={{ width: 0 }}
+              animate={{ width: `${Math.min(100, summary.overallProgress)}%` }}
+              transition={{ duration: 0.6 }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ===== Add goal form ===== */}
+      <AnimatePresence>
+        {isAdding && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+            <div className="rounded-[1.6rem] bg-card border border-border/70 p-5 shadow-card space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-[16px] font-bold text-foreground">New goal</p>
+                <button onClick={() => setIsAdding(false)} className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/70 transition-colors">
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+
+              <Input placeholder="Goal title" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} />
+              <Input type="number" placeholder="Target amount" value={formData.targetAmount || ''} onChange={(e) => setFormData({ ...formData, targetAmount: parseFloat(e.target.value) || 0 })} />
+              <DatePicker value={formData.targetDate} onChange={(d) => setFormData({ ...formData, targetDate: d })} />
+              <Input placeholder="Category (e.g. Travel, Emergency)" value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} />
+
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Priority</label>
+                <div className="flex gap-2 mt-1.5">
+                  {(['low', 'medium', 'high'] as const).map(p => (
+                    <button key={p} onClick={() => setFormData({ ...formData, priority: p })}
+                      className={cn('flex-1 py-2.5 rounded-xl text-[13px] font-bold capitalize transition-all',
+                        formData.priority === p ? PRIORITY_STYLES[p] + ' ring-1 ring-current/30' : 'bg-secondary/60 text-muted-foreground hover:text-foreground')}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Funding account (optional)</label>
+                <AccountSelect value={formData.fundingAccountId} onChange={(v) => setFormData({ ...formData, fundingAccountId: v })} placeholder="Don't track (counter only)" className="mt-1.5" />
+                <p className="text-[11px] text-muted-foreground mt-1.5">If set, contributions move real money out of this account and withdrawals return it.</p>
+              </div>
+
+              <div className="rounded-2xl bg-secondary/50 border border-border/60 p-3.5 space-y-2">
+                <label className="flex items-center justify-between">
+                  <span className="text-[13px] font-bold flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-primary" /> Auto-save monthly</span>
+                  <input type="checkbox" checked={formData.autoSave} onChange={(e) => setFormData({ ...formData, autoSave: e.target.checked })} className="w-4 h-4 accent-primary" />
+                </label>
+                {formData.autoSave && (
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="text-[10px] text-muted-foreground">Amount / month</label>
+                      <Input type="number" placeholder="0" value={formData.autoSaveAmount} onChange={(e) => setFormData({ ...formData, autoSaveAmount: e.target.value })} className="h-9 text-[13px]" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground">Day (1-28)</label>
+                      <Input type="number" placeholder="1" value={formData.autoSaveDay} onChange={(e) => setFormData({ ...formData, autoSaveDay: e.target.value })} className="h-9 text-[13px]" />
+                    </div>
+                    {!formData.fundingAccountId && (
+                      <p className="col-span-2 text-[10px] text-amber-500">Auto-save needs a funding account to move money.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={handleSave}
+                className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-bold text-[15px] flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+              >
+                <Check className="w-4 h-4" strokeWidth={2.6} /> Save goal
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ===== Goals list ===== */}
       <div className="space-y-3">
         {sortedGoals.length > 0 ? (
           sortedGoals.map(goal => {
@@ -154,116 +245,126 @@ export function GoalsDashboard() {
             const remaining = pacing.remaining
             const badge = STATUS_BADGE[pacing.status]
             const milestones = goal.milestones && goal.milestones.length > 0 ? goal.milestones : GoalService.buildMilestones(goal.targetAmount)
+            const achieved = remaining <= 0
             return (
-              <motion.div key={goal.id} layout className="p-4 rounded-2xl bg-card border border-border/50">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-bold truncate">{goal.title}</p>
-                      <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full', PRIORITY_STYLES[goal.priority || 'medium'])}>
-                        {goal.priority || 'medium'}
-                      </span>
-                      {goal.autoSave && goal.autoSaveAmount ? (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary flex items-center gap-0.5">
-                          <Zap className="w-2.5 h-2.5" /> Auto
-                        </span>
-                      ) : null}
+              <motion.div key={goal.id} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-[1.6rem] bg-card border border-border/70 p-5 shadow-card">
+                {/* Head */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <div className={cn('w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ring-1 ring-black/5 dark:ring-white/5', achieved ? 'bg-emerald-500/10' : 'bg-primary/10')}>
+                      <Target className={cn('w-5 h-5', achieved ? 'text-emerald-500' : 'text-primary')} strokeWidth={2.2} />
                     </div>
-                    <p className="text-xs text-muted-foreground">{goal.category}</p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-[16px] font-bold text-foreground truncate">{goal.title}</p>
+                        <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full', PRIORITY_STYLES[goal.priority || 'medium'])}>
+                          {goal.priority || 'medium'}
+                        </span>
+                        {goal.autoSave && goal.autoSaveAmount ? (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary flex items-center gap-0.5">
+                            <Zap className="w-2.5 h-2.5" /> Auto
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-[12px] text-muted-foreground mt-0.5">{goal.category}</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
                     {(goal.contributions?.length ?? 0) > 0 && (
-                      <button onClick={() => setHistoryId(historyId === goal.id ? null : goal.id)} className="p-2 hover:bg-secondary/60 rounded-lg transition-colors" aria-label="History">
+                      <button onClick={() => setHistoryId(historyId === goal.id ? null : goal.id)} className="p-2 hover:bg-secondary/60 rounded-xl transition-colors" aria-label="History">
                         <History className="w-4 h-4 text-muted-foreground" />
                       </button>
                     )}
-                    <button onClick={() => setEditingGoalId(goal.id)} className="p-2 hover:bg-secondary/60 rounded-lg transition-colors" aria-label="Edit goal">
+                    <button onClick={() => setEditingGoalId(goal.id)} className="p-2 hover:bg-secondary/60 rounded-xl transition-colors" aria-label="Edit goal">
                       <Edit2 className="w-4 h-4 text-muted-foreground" />
                     </button>
-                    <button onClick={() => handleDelete(goal)} className="p-2 hover:bg-destructive/10 rounded-lg transition-colors" aria-label="Delete goal">
+                    <button onClick={() => handleDelete(goal)} className="p-2 hover:bg-destructive/10 rounded-xl transition-colors" aria-label="Delete goal">
                       <Trash2 className="w-4 h-4 text-muted-foreground" />
                     </button>
                   </div>
                 </div>
 
-                {/* Progress */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span>{formatCurrency(goal.currentAmount)} / {formatCurrency(goal.targetAmount)}</span>
-                    <span className="font-semibold">{Math.round(pacing.progress)}%</span>
+                {/* Amounts */}
+                <div className="flex items-end justify-between mb-2">
+                  <div>
+                    <span className="text-[20px] font-extrabold text-foreground tabular-nums">{formatCurrency(goal.currentAmount)}</span>
+                    <span className="text-[13px] text-muted-foreground"> / {formatCurrency(goal.targetAmount)}</span>
                   </div>
-                  <div className="relative w-full h-2.5 rounded-full bg-secondary overflow-hidden">
-                    <motion.div
-                      className="h-full bg-primary"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.min(100, pacing.progress)}%` }}
-                      transition={{ duration: 0.5 }}
-                    />
-                    {/* Milestone ticks */}
-                    {milestones.map((m, i) => {
-                      const pct = goal.targetAmount > 0 ? (m.amount / goal.targetAmount) * 100 : 0
-                      if (pct >= 100) return null
-                      return (
-                        <span
-                          key={i}
-                          className={cn('absolute top-0 bottom-0 w-0.5', m.completed ? 'bg-primary-foreground/60' : 'bg-foreground/15')}
-                          style={{ left: `${pct}%` }}
-                        />
-                      )
-                    })}
-                  </div>
+                  <span className="text-[14px] font-extrabold text-foreground">{Math.round(pacing.progress)}%</span>
+                </div>
+
+                {/* Progress with milestone ticks */}
+                <div className="relative w-full h-2.5 rounded-full bg-secondary overflow-hidden">
+                  <motion.div
+                    className={cn('h-full rounded-full', achieved ? 'bg-emerald-500' : 'bg-primary')}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min(100, pacing.progress)}%` }}
+                    transition={{ duration: 0.5 }}
+                  />
+                  {milestones.map((m, i) => {
+                    const pct = goal.targetAmount > 0 ? (m.amount / goal.targetAmount) * 100 : 0
+                    if (pct >= 100) return null
+                    return (
+                      <span
+                        key={i}
+                        className={cn('absolute top-0 bottom-0 w-0.5', m.completed ? 'bg-primary-foreground/60' : 'bg-foreground/15')}
+                        style={{ left: `${pct}%` }}
+                      />
+                    )
+                  })}
                 </div>
 
                 {/* Pacing line */}
                 {!pacing.isAchieved && (pacing.requiredPerMonth || badge) && (
-                  <div className="flex items-center justify-between mt-2">
+                  <div className="flex items-center justify-between mt-3">
                     {pacing.requiredPerMonth ? (
-                      <p className="text-[10px] text-muted-foreground">
-                        Save <span className="font-semibold text-foreground">{formatCurrency(pacing.requiredPerMonth)}/mo</span>
+                      <p className="text-[12px] text-muted-foreground">
+                        Save <span className="font-bold text-foreground">{formatCurrency(pacing.requiredPerMonth)}/mo</span>
                         {pacing.monthsLeft ? ` for ${pacing.monthsLeft} mo` : ''}
                       </p>
                     ) : <span />}
                     {badge && (
-                      <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5', badge.cls)}>
-                        <badge.icon className="w-2.5 h-2.5" /> {badge.label}
+                      <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1', badge.cls)}>
+                        <badge.icon className="w-3 h-3" /> {badge.label}
                       </span>
                     )}
                   </div>
                 )}
 
                 {/* Contribute actions */}
-                <div className="flex gap-2 mt-3">
+                <div className="flex gap-2 mt-4">
                   {remaining > 0 ? (
                     <>
                       {steps.map(s => (
                         <button
                           key={s.value}
                           onClick={() => handleContribute(goal, s.value)}
-                          className="flex-1 h-8 rounded-lg bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20"
+                          className="flex-1 h-9 rounded-xl bg-primary/10 text-primary text-[13px] font-bold hover:bg-primary/20 transition-colors"
                         >
                           {s.label}
                         </button>
                       ))}
                       <button
                         onClick={() => setCustomAmountId(customAmountId === goal.id ? null : goal.id)}
-                        className="flex-1 h-8 rounded-lg bg-secondary text-foreground text-xs font-semibold hover:bg-secondary/80"
+                        className="flex-1 h-9 rounded-xl bg-secondary text-foreground text-[13px] font-bold hover:bg-secondary/70 transition-colors"
                       >
                         Custom
                       </button>
                     </>
                   ) : (
-                    <div className="w-full h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                      <p className="text-xs text-emerald-500 font-semibold">✓ Goal Achieved!</p>
+                    <div className="w-full h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center gap-1.5">
+                      <Check className="w-4 h-4 text-emerald-500" strokeWidth={2.6} />
+                      <p className="text-[13px] text-emerald-500 font-bold">Goal achieved!</p>
                     </div>
                   )}
                 </div>
 
                 {/* Custom amount input */}
                 {customAmountId === goal.id && remaining > 0 && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="flex gap-2 mt-2 pt-2 border-t border-border/30">
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="flex gap-2 mt-2.5 pt-2.5 border-t border-border/40">
                     <div className="relative flex-1">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{getCurrencySymbol(currency)}</span>
-                      <Input type="number" placeholder="Amount" value={customAmount} onChange={(e) => setCustomAmount(e.target.value)} className="h-8 text-xs pl-6" />
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-muted-foreground">{getCurrencySymbol(currency)}</span>
+                      <Input type="number" placeholder="Amount" value={customAmount} onChange={(e) => setCustomAmount(e.target.value)} className="h-9 text-[13px] pl-7" />
                     </div>
                     <Button size="sm" onClick={() => handleCustomAmountAdd(goal)}>Add</Button>
                   </motion.div>
@@ -276,7 +377,7 @@ export function GoalsDashboard() {
                       <button
                         key={s.value}
                         onClick={() => handleWithdraw(goal, s.value)}
-                        className="flex-1 h-7 rounded-lg bg-rose-500/10 text-rose-500 text-[10px] font-semibold hover:bg-rose-500/20"
+                        className="flex-1 h-8 rounded-xl bg-rose-500/10 text-rose-500 text-[12px] font-bold hover:bg-rose-500/20 transition-colors"
                       >
                         {s.label.replace('+', '-')}
                       </button>
@@ -288,13 +389,13 @@ export function GoalsDashboard() {
                 <AnimatePresence>
                   {historyId === goal.id && (goal.contributions?.length ?? 0) > 0 && (
                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                      <div className="mt-3 pt-3 border-t border-border/30 space-y-1.5">
+                      <div className="mt-3 pt-3 border-t border-border/40 space-y-2">
                         {[...(goal.contributions || [])].reverse().slice(0, 8).map((c) => (
-                          <div key={c.id} className="flex items-center justify-between text-[10px]">
+                          <div key={c.id} className="flex items-center justify-between text-[12px]">
                             <span className="text-muted-foreground">
                               {new Date(c.date).toLocaleDateString()}{c.auto ? ' · auto' : ''}
                             </span>
-                            <span className={cn('font-semibold', c.amount >= 0 ? 'text-emerald-500' : 'text-rose-500')}>
+                            <span className={cn('font-bold', c.amount >= 0 ? 'text-emerald-500' : 'text-rose-500')}>
                               {c.amount >= 0 ? '+' : ''}{formatCurrency(c.amount)}
                             </span>
                           </div>
@@ -305,7 +406,7 @@ export function GoalsDashboard() {
                 </AnimatePresence>
 
                 {goal.targetDate && (
-                  <p className="text-[10px] text-muted-foreground mt-2">
+                  <p className="text-[11px] text-muted-foreground mt-3">
                     Target: {new Date(goal.targetDate).toLocaleDateString()}
                     {pacing.projectedCompletion && !pacing.isAchieved && (
                       <> • Projected: {pacing.projectedCompletion.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</>
@@ -316,82 +417,13 @@ export function GoalsDashboard() {
             )
           })
         ) : (
-          <div className="text-center py-10 bg-secondary/20 rounded-3xl border border-dashed border-border/50">
+          <div className="rounded-[1.6rem] bg-secondary/20 border border-dashed border-border/60 py-12 text-center">
             <Target className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-            <p className="text-xs font-bold text-muted-foreground">No goals yet</p>
-            <p className="text-[10px] text-muted-foreground mt-1">Create a goal to start saving with purpose.</p>
+            <p className="text-[14px] font-bold text-foreground">No goals yet</p>
+            <p className="text-[12px] text-muted-foreground mt-1">Create a goal to start saving with purpose.</p>
           </div>
         )}
       </div>
-
-      {!isAdding && (
-        <Button onClick={() => setIsAdding(true)} size="pill" className="w-full">
-          <Plus className="w-4 h-4" /> New Goal
-        </Button>
-      )}
-
-      {/* Add goal form */}
-      <AnimatePresence>
-        {isAdding && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-            <div className="bg-secondary/50 p-4 rounded-3xl space-y-3">
-              <Input placeholder="Goal Title" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} />
-              <Input type="number" placeholder="Target Amount" value={formData.targetAmount || ''} onChange={(e) => setFormData({ ...formData, targetAmount: parseFloat(e.target.value) || 0 })} />
-              <DatePicker value={formData.targetDate} onChange={(d) => setFormData({ ...formData, targetDate: d })} />
-              <Input placeholder="Category (e.g., Travel, Emergency)" value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} />
-
-              {/* Priority */}
-              <div>
-                <label className="text-[10px] font-semibold text-muted-foreground uppercase">Priority</label>
-                <div className="flex gap-2 mt-1">
-                  {(['low', 'medium', 'high'] as const).map(p => (
-                    <button key={p} onClick={() => setFormData({ ...formData, priority: p })}
-                      className={cn('flex-1 py-2 rounded-lg text-xs font-semibold capitalize transition-all',
-                        formData.priority === p ? PRIORITY_STYLES[p] + ' ring-1 ring-current/30' : 'bg-card text-muted-foreground hover:text-foreground')}>
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Funding account */}
-              <div>
-                <label className="text-[10px] font-semibold text-muted-foreground uppercase">Funding Account (optional)</label>
-                <AccountSelect value={formData.fundingAccountId} onChange={(v) => setFormData({ ...formData, fundingAccountId: v })} placeholder="Don't track (counter only)" className="mt-1" />
-                <p className="text-[10px] text-muted-foreground mt-1">If set, contributions move real money out of this account and withdrawals return it.</p>
-              </div>
-
-              {/* Auto-save */}
-              <div className="rounded-2xl bg-card border border-border/50 p-3 space-y-2">
-                <label className="flex items-center justify-between">
-                  <span className="text-xs font-semibold flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-primary" /> Auto-save monthly</span>
-                  <input type="checkbox" checked={formData.autoSave} onChange={(e) => setFormData({ ...formData, autoSave: e.target.checked })} className="w-4 h-4 accent-primary" />
-                </label>
-                {formData.autoSave && (
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div>
-                      <label className="text-[9px] text-muted-foreground">Amount / month</label>
-                      <Input type="number" placeholder="0" value={formData.autoSaveAmount} onChange={(e) => setFormData({ ...formData, autoSaveAmount: e.target.value })} className="h-8 text-xs" />
-                    </div>
-                    <div>
-                      <label className="text-[9px] text-muted-foreground">Day (1-28)</label>
-                      <Input type="number" placeholder="1" value={formData.autoSaveDay} onChange={(e) => setFormData({ ...formData, autoSaveDay: e.target.value })} className="h-8 text-xs" />
-                    </div>
-                    {!formData.fundingAccountId && (
-                      <p className="col-span-2 text-[9px] text-amber-500">Auto-save needs a funding account to move money.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-2">
-                <Button onClick={handleSave} className="flex-1">Save</Button>
-                <Button variant="outline" onClick={() => setIsAdding(false)} className="flex-1">Cancel</Button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Edit Goal Modal */}
       <AnimatePresence>
@@ -437,7 +469,6 @@ function EditGoalForm({ goalId, goals, onClose }: { goalId: string; goals: Goal[
     if (targetAmt <= 0) { showToast('Target amount must be greater than 0'); return }
 
     try {
-      // Rebuild milestones against the (possibly new) target, preserving completion.
       const milestones = GoalService.updateMilestones(
         GoalService.buildMilestones(targetAmt),
         goal.currentAmount,
@@ -472,41 +503,41 @@ function EditGoalForm({ goalId, goals, onClose }: { goalId: string; goals: Goal[
         initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}
         transition={{ type: 'spring', damping: 25, stiffness: 350 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm bg-card border border-border/60 rounded-3xl p-5 shadow-2xl space-y-4 my-8"
+        className="w-full max-w-sm bg-card border border-border/60 rounded-[1.8rem] p-5 shadow-2xl space-y-4 my-8"
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-foreground">Edit Goal</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary"><X className="w-4 h-4 text-muted-foreground" /></button>
+          <h3 className="text-[16px] font-bold text-foreground">Edit goal</h3>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/70 transition-colors"><X className="w-4 h-4 text-muted-foreground" /></button>
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-muted-foreground uppercase">Goal Name</label>
-          <Input placeholder="e.g., Emergency Fund" value={data.title} onChange={(e) => setData({ ...data, title: e.target.value })} className="mt-1.5 text-sm" />
+          <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Goal name</label>
+          <Input placeholder="e.g. Emergency Fund" value={data.title} onChange={(e) => setData({ ...data, title: e.target.value })} className="mt-1.5 text-sm" />
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-muted-foreground uppercase">Target Amount</label>
+          <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Target amount</label>
           <Input type="number" placeholder="Target amount" value={data.targetAmount} onChange={(e) => setData({ ...data, targetAmount: e.target.value })} className="mt-1.5 text-sm" />
-          <p className="text-[10px] text-muted-foreground mt-1">Saved amount changes only via contributions, so your ledger stays accurate.</p>
+          <p className="text-[11px] text-muted-foreground mt-1.5">Saved amount changes only via contributions, so your ledger stays accurate.</p>
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-muted-foreground uppercase">Category</label>
-          <Input placeholder="e.g., Travel, Emergency" value={data.category} onChange={(e) => setData({ ...data, category: e.target.value })} className="mt-1.5 text-sm" />
+          <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Category</label>
+          <Input placeholder="e.g. Travel, Emergency" value={data.category} onChange={(e) => setData({ ...data, category: e.target.value })} className="mt-1.5 text-sm" />
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-muted-foreground uppercase">Target Date</label>
+          <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Target date</label>
           <DatePicker value={data.targetDate} onChange={(d) => setData({ ...data, targetDate: d })} className="mt-1.5" />
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-muted-foreground uppercase">Priority</label>
+          <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Priority</label>
           <div className="flex gap-2 mt-1.5">
             {(['low', 'medium', 'high'] as const).map((p) => (
               <button key={p} onClick={() => setData({ ...data, priority: p })}
-                className={cn('flex-1 py-2 rounded-lg text-xs font-semibold capitalize transition-all',
-                  data.priority === p ? PRIORITY_STYLES[p] + ' ring-1 ring-current/30' : 'bg-secondary text-muted-foreground hover:text-foreground')}>
+                className={cn('flex-1 py-2.5 rounded-xl text-[13px] font-bold capitalize transition-all',
+                  data.priority === p ? PRIORITY_STYLES[p] + ' ring-1 ring-current/30' : 'bg-secondary/60 text-muted-foreground hover:text-foreground')}>
                 {p}
               </button>
             ))}
@@ -514,35 +545,34 @@ function EditGoalForm({ goalId, goals, onClose }: { goalId: string; goals: Goal[
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-muted-foreground uppercase">Funding Account</label>
+          <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Funding account</label>
           <AccountSelect value={data.fundingAccountId} onChange={(v) => setData({ ...data, fundingAccountId: v })} placeholder="Don't track (counter only)" className="mt-1.5" />
         </div>
 
-        {/* Auto-save */}
-        <div className="rounded-2xl bg-secondary/40 border border-border/50 p-3 space-y-2">
+        <div className="rounded-2xl bg-secondary/40 border border-border/60 p-3.5 space-y-2">
           <label className="flex items-center justify-between">
-            <span className="text-xs font-semibold flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-primary" /> Auto-save monthly</span>
+            <span className="text-[13px] font-bold flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-primary" /> Auto-save monthly</span>
             <input type="checkbox" checked={data.autoSave} onChange={(e) => setData({ ...data, autoSave: e.target.checked })} className="w-4 h-4 accent-primary" />
           </label>
           {data.autoSave && (
             <div className="grid grid-cols-2 gap-2 pt-1">
               <div>
-                <label className="text-[9px] text-muted-foreground">Amount / month</label>
-                <Input type="number" placeholder="0" value={data.autoSaveAmount} onChange={(e) => setData({ ...data, autoSaveAmount: e.target.value })} className="h-8 text-xs" />
+                <label className="text-[10px] text-muted-foreground">Amount / month</label>
+                <Input type="number" placeholder="0" value={data.autoSaveAmount} onChange={(e) => setData({ ...data, autoSaveAmount: e.target.value })} className="h-9 text-[13px]" />
               </div>
               <div>
-                <label className="text-[9px] text-muted-foreground">Day (1-28)</label>
-                <Input type="number" placeholder="1" value={data.autoSaveDay} onChange={(e) => setData({ ...data, autoSaveDay: e.target.value })} className="h-8 text-xs" />
+                <label className="text-[10px] text-muted-foreground">Day (1-28)</label>
+                <Input type="number" placeholder="1" value={data.autoSaveDay} onChange={(e) => setData({ ...data, autoSaveDay: e.target.value })} className="h-9 text-[13px]" />
               </div>
               {!data.fundingAccountId && (
-                <p className="col-span-2 text-[9px] text-amber-500">Auto-save needs a funding account to move money.</p>
+                <p className="col-span-2 text-[10px] text-amber-500">Auto-save needs a funding account to move money.</p>
               )}
             </div>
           )}
         </div>
 
         <div className="flex gap-2 pt-1">
-          <Button onClick={handleSave} className="flex-1 text-sm">Save Changes</Button>
+          <Button onClick={handleSave} className="flex-1 text-sm">Save changes</Button>
           <Button variant="outline" onClick={onClose} className="flex-1 text-sm">Cancel</Button>
         </div>
       </motion.div>

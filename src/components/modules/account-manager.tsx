@@ -353,16 +353,19 @@ function BottomSheet({
 /*  Add / Edit account sheet                                          */
 /* ------------------------------------------------------------------ */
 
-function AddAccountSheet({
+export function AddAccountSheet({
   editingId,
   accounts,
   onClose,
   onRequestDelete,
+  onCreated,
 }: {
   editingId: string | null
   accounts: Account[]
   onClose: () => void
-  onRequestDelete: (id: string, name: string) => void
+  onRequestDelete?: (id: string, name: string) => void
+  /** Called with the new account id right after a successful create. */
+  onCreated?: (id: string) => void
 }) {
   const { showToast } = useToast()
   const existing = editingId ? accounts.find((a) => a.id === editingId) : undefined
@@ -440,10 +443,12 @@ function AddAccountSheet({
         await db.accounts.update(editingId, payload)
         await syncAccountToAsset(trimmed, safeBal)
       } else {
+        const newId = generateUUID()
         await db.accounts.add({
           ...(payload as Omit<Account, 'id'>),
-          id: generateUUID(),
+          id: newId,
         })
+        onCreated?.(newId)
       }
       onClose()
     } catch (err) {
@@ -572,7 +577,7 @@ function AddAccountSheet({
 
       {/* Footer actions */}
       <div className="mt-8 flex items-center justify-between gap-3">
-        {editingId && canDeleteType ? (
+        {editingId && canDeleteType && onRequestDelete ? (
           <button
             onClick={() => onRequestDelete(editingId, name || 'this account')}
             className="flex items-center gap-1.5 h-11 px-4 rounded-full border border-border/60 text-sm font-semibold text-red-500 hover:bg-destructive/10 transition-colors"

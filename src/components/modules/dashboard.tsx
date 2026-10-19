@@ -109,6 +109,22 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
       .reduce((sum, tx) => sum + tx.amount, 0)
   }, [todayTransactions])
 
+  // Actual spending this calendar month, computed directly from transactions.
+  // This is the source of truth for the "Spent" figures — it does NOT depend on
+  // whether the user has set up budgets (budgets only drive the budget bar).
+  // Internal transfers (category 'Transfer') are excluded so moving money
+  // between your own accounts doesn't count as spending.
+  const monthActualSpent = React.useMemo(() => {
+    const now = new Date()
+    return safeAllTransactions
+      .filter(tx => {
+        if (tx.type !== 'expense' || tx.category === 'Transfer') return false
+        const d = new Date(tx.date)
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+      })
+      .reduce((sum, tx) => sum + tx.amount, 0)
+  }, [safeAllTransactions])
+
   // Phase 2.7: Smart Insights
   const smartInsights = React.useMemo(() => {
     return SmartInsightsService.generateInsights(safeAllTransactions, safeBudgets)
@@ -362,12 +378,14 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
   const totalLent = metrics.totalDebt === 0 ? 0 : metrics.totalDebt
   const activeLendingCount = safeLending.filter(l => l.status === 'active').length
 
-  // Month income / net for hero trend line
+  // Month income / net for hero trend line. Exclude internal transfers so the
+  // income figure reflects real money coming in, mirroring the spend logic.
   const monthIncomeTotal = safeAllTransactions.filter(tx => {
+    if (tx.type !== 'income' || tx.category === 'Transfer') return false
     const d = new Date(tx.date)
-    return tx.type === 'income' && d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear()
+    return d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear()
   }).reduce((sum, tx) => sum + tx.amount, 0)
-  const monthNet = monthIncomeTotal - monthlyBudgetData.monthlySpent
+  const monthNet = monthIncomeTotal - monthActualSpent
   const monthTrendPct = monthIncomeTotal > 0 ? Math.round((monthNet / monthIncomeTotal) * 100) : 0
 
   return (
@@ -468,7 +486,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
             <span className="text-[11px] text-muted-foreground">Spent</span>
-            <span className="text-[11px] font-semibold text-foreground">{formatCurrency(monthlyBudgetData.monthlySpent)}</span>
+            <span className="text-[11px] font-semibold text-foreground">{formatCurrency(monthActualSpent)}</span>
           </div>
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -843,13 +861,13 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
                     <CardContent className="pt-6">
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Spending Pace</p>
                       <div className="flex items-baseline gap-2 mb-4">
-                        <span className="text-2xl font-bold text-foreground">{formatCurrency(Math.round(monthlyBudgetData.monthlySpent / Math.max(1, new Date().getDate())))}</span>
+                        <span className="text-2xl font-bold text-foreground">{formatCurrency(Math.round(monthActualSpent / Math.max(1, new Date().getDate())))}</span>
                         <span className="text-xs text-muted-foreground">/day avg</span>
                       </div>
                       <div className="grid grid-cols-3 gap-3">
                         <div className="p-2.5 rounded-xl bg-secondary/50">
                           <p className="text-[9px] text-muted-foreground uppercase">This month</p>
-                          <p className="text-sm font-bold text-foreground mt-0.5">{formatCurrency(monthlyBudgetData.monthlySpent)}</p>
+                          <p className="text-sm font-bold text-foreground mt-0.5">{formatCurrency(monthActualSpent)}</p>
                         </div>
                         <div className="p-2.5 rounded-xl bg-secondary/50">
                           <p className="text-[9px] text-muted-foreground uppercase">Income</p>

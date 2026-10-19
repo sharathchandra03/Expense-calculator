@@ -7,7 +7,7 @@ import { motion } from 'framer-motion'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/schema'
 
-export type TabType = 'dashboard' | 'ledger' | 'accounts' | 'analytics' | 'budgets' | 'bills' | 'subscriptions' | 'goals' | 'debtplanner' | 'categories' | 'receipts' | 'splits' | 'sharedwallets' | 'investments' | 'lending' | 'assets' | 'reports' | 'notifications' | 'csvimport' | 'settings' | 'about' | 'support' | 'faq' | 'health' | 'supportadmin' | 'more' | 'dayview' | 'calendarview' | 'customview';
+export type TabType = 'dashboard' | 'ledger' | 'accounts' | 'analytics' | 'budgets' | 'bills' | 'subscriptions' | 'goals' | 'debtplanner' | 'categories' | 'receipts' | 'splits' | 'sharedwallets' | 'investments' | 'lending' | 'assets' | 'reports' | 'notifications' | 'csvimport' | 'settings' | 'about' | 'support' | 'faq' | 'health' | 'supportadmin' | 'more' | 'dayview' | 'calendarview' | 'customview' | 'plannedpayments' | 'statistics';
 
 interface BottomNavProps {
   activeTab: TabType;

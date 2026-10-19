@@ -396,6 +396,29 @@ export interface SupportTicket {
   }>;
 }
 
+// Planned Payments — future cash flow (planned receivables & expenditures).
+// Mirrors a Transaction but is a *plan* that hasn't happened yet; account
+// balances are only touched when a planned payment is marked as completed.
+export type PlannedPaymentFrequency = 'one-time' | 'recurring';
+export interface PlannedPayment {
+  id: string;
+  type: 'income' | 'expense'; // planned receivable vs planned expenditure
+  category: string;
+  amount: number;
+  accountId: string;
+  date: string; // YYYY-MM-DD — the (next) planned date
+  time?: string; // HH:mm — optional
+  description: string; // the note
+  frequency: PlannedPaymentFrequency; // one-time or recurring
+  recurrenceRule?: 'weekly' | 'monthly' | 'yearly'; // set when frequency === 'recurring'
+  tags?: string[]; // labels
+  autoExecute?: boolean; // when true (default), auto-logs on/after the due date; otherwise reminder-only
+  status: 'planned' | 'completed' | 'cancelled';
+  createdAt: string; // ISO timestamp
+  completedAt?: string; // ISO timestamp — when converted to a real transaction
+  lastTransactionId?: string; // the real transaction created when completed
+}
+
 class PennyFlowDatabase extends Dexie {
   transactions!: Table<Transaction, string>;
   lending!: Table<Lending, string>;
@@ -417,6 +440,7 @@ class PennyFlowDatabase extends Dexie {
   debts!: Table<DebtRecord, string>;
   userProfile!: Table<UserProfile, string>;
   supportTickets!: Table<SupportTicket, string>;
+  plannedPayments!: Table<PlannedPayment, string>;
 
   constructor() {
     super('PennyFlowDatabase');
@@ -709,6 +733,34 @@ class PennyFlowDatabase extends Dexie {
           w.transactions = []
         }
       })
+    });
+
+    // Version 13 — add plannedPayments table (future cash flow).
+    // Additive & non-destructive: all existing stores are repeated verbatim and
+    // the new `plannedPayments` table is appended. Indexed on the fields we
+    // query/sort by (date, type, status).
+    this.version(13).stores({
+      transactions: 'id, date, type, category, accountId',
+      lending: 'id, contactName, type, status, createdAt',
+      assets: 'id, name, type',
+      bills: 'id, title, dueDate, isPaid',
+      goals: 'id, title, targetDate, status',
+      accounts: 'id, name, type',
+      systemLogs: 'id, timestamp, type',
+      budgets: 'id, category, period',
+      customCategories: 'id, name, type',
+      tags: 'id, name',
+      investments: 'id, name, symbol, accountId',
+      notifications: 'id, type, timestamp',
+      financialBriefs: 'id, period, startDate',
+      templates: 'id, name, category, type',
+      splits: 'id, transactionId, createdAt',
+      subscriptions: 'id, name, cycle, isActive',
+      sharedWallets: 'id, name, inviteCode, archived',
+      debts: 'id, name, status, createdAt',
+      userProfile: 'id',
+      supportTickets: 'id, category, status, priority, createdAt, syncStatus',
+      plannedPayments: 'id, date, type, status',
     });
   }
 }

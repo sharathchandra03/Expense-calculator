@@ -17,13 +17,17 @@ import { formatCurrency, cn, getCurrencySymbol } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { DatePicker } from '@/components/ui/date-picker'
 import { ClockTimePicker } from '@/components/ui/clock-time-picker'
+import { CalendarDatePicker } from '@/components/ui/calendar-date-picker'
 import {
   ArrowDownRight, ArrowUpRight, Heart, Home, Target, Zap,
   X, ChevronRight, Check, Camera, ArrowLeft, Calendar, Clock,
   Calculator, Utensils, Wallet, AlignLeft, Hash, Paperclip,
-  Save, ArrowLeftRight, Plus, Pencil, Search,
+  Save, ArrowLeftRight, Plus, Pencil, Search, CalendarClock,
 } from 'lucide-react'
 import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES } from '@/lib/category-meta'
+import { PlannedPaymentForm, type PlannedPaymentDraft } from '@/components/modules/planned-payment-form'
+import { PlannedPaymentService } from '@/services/PlannedPaymentService'
+import { AddAccountSheet } from '@/components/modules/account-manager'
 
 // Validation schemas
 const transactionSchema = z.object({
@@ -86,7 +90,7 @@ interface QuickAddModalProps {
 }
 
 // Accent colors mirror the reference: orange (expense), lime (income), blue (transfer)
-const PRIMARY_ACCENTS: Record<PrimaryMode, { color: string; soft: string }> = {
+export const PRIMARY_ACCENTS: Record<PrimaryMode, { color: string; soft: string }> = {
   expense: { color: '#f59e0b', soft: 'rgba(245,158,11,0.14)' },
   income: { color: '#a3e635', soft: 'rgba(163,230,53,0.14)' },
   transfer: { color: '#38bdf8', soft: 'rgba(56,189,248,0.14)' },
@@ -103,14 +107,15 @@ const MODE_CONFIG = {
 
 // Richer metadata for the "More to add" screen — distinct color + description
 // per record type so each card reads as its own purpose.
-const MORE_TO_ADD: { key: 'lending' | 'asset' | 'bill' | 'goal'; label: string; desc: string; icon: React.ElementType; color: string }[] = [
+const MORE_TO_ADD: { key: 'planned' | 'lending' | 'asset' | 'bill' | 'goal'; label: string; desc: string; icon: React.ElementType; color: string }[] = [
+  { key: 'planned', label: 'Planned Payment', desc: 'A future income or expense you expect', icon: CalendarClock, color: '#8b5cf6' },
   { key: 'lending', label: 'Lending', desc: 'Money you lent or borrowed from someone', icon: Heart, color: '#ec4899' },
   { key: 'asset', label: 'Asset', desc: 'Property, gold, savings or anything you own', icon: Home, color: '#f59e0b' },
   { key: 'bill', label: 'Bill', desc: 'An upcoming payment with a due date', icon: Zap, color: '#8b5cf6' },
   { key: 'goal', label: 'Goal', desc: 'Save towards something you are planning for', icon: Target, color: '#6366f1' },
 ]
 
-const SUGGESTED_TAGS = ['vacation 🏝️', 'amazon 📦', 'business']
+export const SUGGESTED_TAGS = ['vacation 🏝️', 'amazon 📦', 'business']
 
 export function QuickAddModal({ isOpen, onClose, onNavigateToTab }: QuickAddModalProps) {
   // step: 'transaction' = the Expense/Income/Transfer screen (default when + is tapped)
@@ -118,7 +123,7 @@ export function QuickAddModal({ isOpen, onClose, onNavigateToTab }: QuickAddModa
   //       'form' = one of the other record forms
   const [mode, setMode] = useState<ModeType>('expense')
   const [primary, setPrimary] = useState<PrimaryMode>('expense')
-  const [step, setStep] = useState<'transaction' | 'select' | 'form'>('transaction')
+  const [step, setStep] = useState<'transaction' | 'select' | 'form' | 'planned'>('transaction')
   const [submitted, setSubmitted] = useState(false)
   const accounts = useLiveQuery(() => db.accounts.toArray()) || []
 
@@ -390,6 +395,17 @@ export function QuickAddModal({ isOpen, onClose, onNavigateToTab }: QuickAddModa
     } catch (err) { console.error('Error saving goal:', err) }
   }
 
+  const onPlannedSubmit = async (draft: PlannedPaymentDraft) => {
+    try {
+      await PlannedPaymentService.create(draft)
+      // Close the modal and take the user to their planned cash flow.
+      handleClose()
+      onNavigateToTab?.('plannedpayments')
+    } catch (err) {
+      console.error('Error saving planned payment:', err)
+    }
+  }
+
   const primaryForm = primary === 'expense' ? expenseForm : primary === 'income' ? incomeForm : transferForm
   const primarySubmit = primary === 'expense' ? onExpenseSubmit : primary === 'income' ? onIncomeSubmit : onTransferSubmit
 
@@ -454,7 +470,7 @@ export function QuickAddModal({ isOpen, onClose, onNavigateToTab }: QuickAddModa
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.05, type: 'spring', stiffness: 380, damping: 30 }}
                       whileTap={{ scale: 0.98 }}
-                      onClick={() => handleModeSelect(item.key)}
+                      onClick={() => item.key === 'planned' ? setStep('planned') : handleModeSelect(item.key)}
                       className="group relative w-full flex items-center gap-4 p-4 rounded-[1.4rem] bg-card border border-border/60 overflow-hidden text-left transition-all hover:border-transparent hover:shadow-card"
                     >
                       {/* Soft gradient glow that reveals on hover */}
@@ -486,6 +502,13 @@ export function QuickAddModal({ isOpen, onClose, onNavigateToTab }: QuickAddModa
                 })}
               </div>
             </motion.div>
+          ) : step === 'planned' ? (
+            <PlannedPaymentForm
+              key="planned"
+              onBack={() => setStep('select')}
+              onSave={onPlannedSubmit}
+              onNavigateToTab={onNavigateToTab}
+            />
           ) : (
             <motion.div
               key="form"
@@ -542,6 +565,7 @@ function TransactionScreen({ primary, setPrimary, form, onSubmit, accounts, onBa
 }) {
   const accent = PRIMARY_ACCENTS[primary]
   const [clockOpen, setClockOpen] = useState(false)
+  const [dateOpen, setDateOpen] = useState(false)
   const [calcOpen, setCalcOpen] = useState(false)
   const [categorySheetOpen, setCategorySheetOpen] = useState(false)
   const [paymentSheetOpen, setPaymentSheetOpen] = useState(false)
@@ -549,7 +573,6 @@ function TransactionScreen({ primary, setPrimary, form, onSubmit, accounts, onBa
   const [toSheetOpen, setToSheetOpen] = useState(false)
   const [tags, setTags] = useState<string[]>([])
   const [newTag, setNewTag] = useState('')
-  const [addingTag, setAddingTag] = useState(false)
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null)
   const currency = getCurrencySymbol()
 
@@ -563,15 +586,28 @@ function TransactionScreen({ primary, setPrimary, form, onSubmit, accounts, onBa
     },
     [],
   ) || []
+  // Suggested (built-in) tags the user has dismissed. Persisted so they stay
+  // hidden across sessions, since there is no DB record to delete for them.
+  const [hiddenSuggested, setHiddenSuggested] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return []
+    try { return JSON.parse(localStorage.getItem('hiddenSuggestedTags') || '[]') }
+    catch { return [] }
+  })
   const tagOptions = React.useMemo(() => {
+    const hidden = new Set(hiddenSuggested.map(t => t.toLowerCase()))
     const seen = new Set<string>()
     const list: string[] = []
-    for (const t of [...SUGGESTED_TAGS, ...savedTags.map(s => s.name)]) {
+    for (const t of SUGGESTED_TAGS) {
+      const key = t.toLowerCase()
+      if (hidden.has(key) || seen.has(key)) continue
+      seen.add(key); list.push(t)
+    }
+    for (const t of savedTags.map(s => s.name)) {
       const key = t.toLowerCase()
       if (!seen.has(key)) { seen.add(key); list.push(t) }
     }
     return list
-  }, [savedTags])
+  }, [savedTags, hiddenSuggested])
 
   const date = form.watch('date') || ''
   const time = form.watch('time') || ''
@@ -586,15 +622,24 @@ function TransactionScreen({ primary, setPrimary, form, onSubmit, accounts, onBa
     setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
   }
 
-  // Only tags that live in the DB can be deleted (the SUGGESTED_TAGS constants
-  // are built in and are not removable).
-  const isDeletable = (t: string) => savedTags.some(s => s.name === t)
+  // Every tag can be removed: DB tags are deleted from the DB, built-in
+  // suggested tags are hidden via a persisted dismiss list.
+  const isDeletable = (_t: string) => true
 
   const deleteTag = async (t: string) => {
     const match = savedTags.find(s => s.name === t)
     if (match) {
       try { await db.tags.delete(match.id) }
       catch (err) { console.error('Error deleting tag:', err) }
+    } else {
+      // A built-in suggested tag: remember it as dismissed so it stays hidden.
+      setHiddenSuggested(prev => {
+        if (prev.some(x => x.toLowerCase() === t.toLowerCase())) return prev
+        const next = [...prev, t]
+        try { localStorage.setItem('hiddenSuggestedTags', JSON.stringify(next)) }
+        catch { /* ignore */ }
+        return next
+      })
     }
     // Drop it from the current selection too
     setTags(prev => prev.filter(x => x !== t))
@@ -621,7 +666,6 @@ function TransactionScreen({ primary, setPrimary, form, onSubmit, accounts, onBa
     }
     setTags(prev => prev.includes(label) ? prev : [...prev, label])
     setNewTag('')
-    setAddingTag(false)
   }
 
   const handleReceiptAttach = async () => {
@@ -672,14 +716,6 @@ function TransactionScreen({ primary, setPrimary, form, onSubmit, accounts, onBa
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-32">
-        {/* Promo banner */}
-        <div className="rounded-2xl bg-secondary border border-primary/15 p-4 mb-5">
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Say what you spent or type it in your own words. You can always use this form to add unlimited expenses for free.
-          </p>
-          <button className="mt-1.5 text-[13px] font-bold text-primary">Explore Pro</button>
-        </div>
-
         {/* Segmented tabs */}
         <div className="grid grid-cols-3 rounded-full bg-secondary/70 p-1 mb-6">
           {(['expense', 'income', 'transfer'] as PrimaryMode[]).map((t) => {
@@ -708,9 +744,10 @@ function TransactionScreen({ primary, setPrimary, form, onSubmit, accounts, onBa
 
         {/* Date + Time row */}
         <div className="flex items-center justify-between mb-6">
-          <DateTimeButton icon={Calendar} accent={accent.color} label={formatDate(date)}>
-            <DatePicker value={date} onChange={(d) => form.setValue('date', d, { shouldValidate: true })} className="absolute inset-0 opacity-0" />
-          </DateTimeButton>
+          <button type="button" onClick={() => setDateOpen(true)} className="flex items-center gap-2.5">
+            <span className="w-6 flex justify-center" style={{ color: accent.color }}><Calendar className="w-[22px] h-[22px]" /></span>
+            <span className="text-[17px] font-semibold text-foreground">{formatDate(date)}</span>
+          </button>
           <button
             type="button"
             onClick={() => setClockOpen(true)}
@@ -797,7 +834,25 @@ function TransactionScreen({ primary, setPrimary, form, onSubmit, accounts, onBa
         <div className="mb-5">
           <div className="flex items-center gap-3 mb-3">
             <Hash className="w-5 h-5 flex-shrink-0" style={{ color: accent.color }} />
-            <span className="text-[16px] text-muted-foreground">Add tags</span>
+            <input
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); createTag() }
+              }}
+              placeholder="Add tags"
+              className="flex-1 bg-transparent text-[13px] font-semibold text-foreground placeholder:text-muted-foreground placeholder:font-normal focus:outline-none"
+            />
+            {newTag.trim() && (
+              <button
+                type="button"
+                onClick={createTag}
+                className="h-8 px-3 rounded-full text-[13px] font-semibold text-background flex-shrink-0"
+                style={{ backgroundColor: accent.color }}
+              >
+                Add
+              </button>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2 pl-8">
             {tagOptions.map((t) => (
@@ -811,44 +866,8 @@ function TransactionScreen({ primary, setPrimary, form, onSubmit, accounts, onBa
                 onLongPress={() => setTagToDelete(t)}
               />
             ))}
-
-            {addingTag ? (
-              <div className="flex items-center gap-1.5">
-                <input
-                  autoFocus
-                  value={newTag}
-                  onChange={(e) => setNewTag(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); createTag() }
-                    if (e.key === 'Escape') { setAddingTag(false); setNewTag('') }
-                  }}
-                  onBlur={() => { if (!newTag.trim()) setAddingTag(false) }}
-                  placeholder="New tag"
-                  className="h-8 w-28 rounded-full bg-secondary border border-border/60 px-3 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-                <button
-                  type="button"
-                  onClick={createTag}
-                  disabled={!newTag.trim()}
-                  className="h-8 px-3 rounded-full text-[13px] font-semibold text-background disabled:opacity-40"
-                  style={{ backgroundColor: accent.color }}
-                >
-                  Add
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setAddingTag(true)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[13px] font-semibold border-[1.5px] border-dashed transition-colors"
-                style={{ borderColor: `${accent.color}80`, color: accent.color }}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                New tag
-              </button>
-            )}
           </div>
-          <p className="pl-8 mt-2 text-[11px] text-muted-foreground/70">Tap to select · long-press a tag to delete</p>
+          <p className="pl-8 mt-2 text-[11px] text-muted-foreground/70">Type a tag (emojis ok) and press Enter · tap to select · long-press to delete</p>
         </div>
 
         {/* Delete-tag confirmation */}
@@ -922,6 +941,15 @@ function TransactionScreen({ primary, setPrimary, form, onSubmit, accounts, onBa
         <Save className="w-6 h-6" />
       </button>
 
+      {/* Calendar date picker */}
+      <CalendarDatePicker
+        open={dateOpen}
+        value={date}
+        accent={accent.color}
+        onConfirm={(d) => { form.setValue('date', d, { shouldValidate: true }); setDateOpen(false) }}
+        onCancel={() => setDateOpen(false)}
+      />
+
       {/* Clock time picker */}
       <ClockTimePicker
         open={clockOpen}
@@ -985,7 +1013,7 @@ function TransactionScreen({ primary, setPrimary, form, onSubmit, accounts, onBa
 }
 
 /** Selectable tag chip with a round checkbox and long-press-to-delete. */
-function TagChip({ label, selected, accent, deletable, onToggle, onLongPress }: {
+export function TagChip({ label, selected, accent, deletable, onToggle, onLongPress }: {
   label: string
   selected: boolean
   accent: { color: string; soft: string }
@@ -1050,21 +1078,6 @@ function TagChip({ label, selected, accent, deletable, onToggle, onLongPress }: 
       </span>
       {label}
     </button>
-  )
-}
-
-function DateTimeButton({ icon: Icon, accent, label, children }: {
-  icon: React.ElementType
-  accent: string
-  label: string
-  children?: React.ReactNode
-}) {
-  return (
-    <div className="relative flex items-center gap-2.5">
-      <span className="w-6 flex justify-center" style={{ color: accent }}><Icon className="w-[22px] h-[22px]" /></span>
-      <span className="text-[17px] font-semibold text-foreground">{label}</span>
-      {children}
-    </div>
   )
 }
 
@@ -1143,7 +1156,7 @@ function CalcKey({
  * The running expression is evaluated live so "Done" always returns a
  * clean numeric string ready for the amount field.
  * ------------------------------------------------------------------ */
-function CalculatorSheet({
+export function CalculatorSheet({
   open,
   initialValue,
   onCancel,
@@ -1295,7 +1308,7 @@ function CalculatorSheet({
 }
 
 /** Large, borderless numeric amount input. Accepts basic math (e.g. 200+50*2). */
-function BigAmountInput({ value, onChange }: { value: string | number; onChange: (v: string) => void }) {
+export function BigAmountInput({ value, onChange }: { value: string | number; onChange: (v: string) => void }) {
   const display = String(value ?? '')
   return (
     <input
@@ -1314,7 +1327,7 @@ function BigAmountInput({ value, onChange }: { value: string | number; onChange:
 }
 
 /** Row-style field: left icon, label on top, inline control, chevron. */
-function FieldRow({ icon: Icon, accent, label, error, children }: {
+export function FieldRow({ icon: Icon, accent, label, error, children }: {
   icon: React.ElementType
   accent: string
   label: string
@@ -1334,7 +1347,7 @@ function FieldRow({ icon: Icon, accent, label, error, children }: {
 }
 
 /** Tappable row that shows the selected value (or placeholder) + chevron. */
-function SheetTrigger({ value, placeholder, icon, onClick }: {
+export function SheetTrigger({ value, placeholder, icon, onClick }: {
   value?: string
   placeholder: string
   icon?: React.ReactNode
@@ -1402,7 +1415,7 @@ function FullSheet({ open, title, onClose, headerAction, children }: {
 /* ------------------------------------------------------------------ *
  * Category picker — full bottom sheet with search + grid
  * ------------------------------------------------------------------ */
-function CategorySheet({ open, type, value, onClose, onSelect }: {
+export function CategorySheet({ open, type, value, onClose, onSelect }: {
   open: boolean
   type: 'expense' | 'income'
   value: string
@@ -1467,14 +1480,15 @@ function CategorySheet({ open, type, value, onClose, onSelect }: {
 /* ------------------------------------------------------------------ *
  * Payment mode picker — full bottom sheet (image 4 style)
  * ------------------------------------------------------------------ */
-function PaymentModeSheet({ open, title = 'Select payment mode', accounts, value, onClose, onSelect, onManage }: {
+export function PaymentModeSheet({ open, title = 'Select payment mode', accounts, value, onClose, onSelect, onManage }: {
   open: boolean
   title?: string
   accounts: any[]
   value: string
   onClose: () => void
   onSelect: (id: string) => void
-  onManage: () => void
+  /** Optional: jump to the full Accounts tab. The pencil icon only shows when provided. */
+  onManage?: () => void
 }) {
   const typeColors: Record<string, string> = {
     bank: 'bg-blue-500/12 text-blue-600',
@@ -1484,19 +1498,26 @@ function PaymentModeSheet({ open, title = 'Select payment mode', accounts, value
     crypto: 'bg-orange-500/12 text-orange-600',
   }
 
+  // Add-account happens inline so the user never leaves the transaction they
+  // were in the middle of entering. On create we auto-select the new account
+  // and close the add sheet, dropping them right back into the picker.
+  const [addOpen, setAddOpen] = useState(false)
+
   return (
     <FullSheet
       open={open}
       title={title}
       onClose={onClose}
       headerAction={
-        <button
-          onClick={onManage}
-          className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center text-foreground"
-          aria-label="Manage accounts"
-        >
-          <Pencil className="w-[15px] h-[15px]" />
-        </button>
+        onManage ? (
+          <button
+            onClick={onManage}
+            className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center text-foreground"
+            aria-label="Manage accounts"
+          >
+            <Pencil className="w-[15px] h-[15px]" />
+          </button>
+        ) : undefined
       }
     >
       <div className="space-y-2">
@@ -1536,16 +1557,31 @@ function PaymentModeSheet({ open, title = 'Select payment mode', accounts, value
           </div>
         )}
 
-        {/* Add new account → go to Accounts tab */}
+        {/* Add new account — opens inline, keeps the transaction in progress */}
         <button
           type="button"
-          onClick={onManage}
+          onClick={() => setAddOpen(true)}
           className="flex w-full items-center gap-2 rounded-2xl p-3.5 text-[14px] font-semibold text-primary hover:bg-primary/5 transition-colors border border-dashed border-primary/40 mt-1"
         >
           <Plus className="w-4 h-4" />
           Add new account
         </button>
       </div>
+
+      {/* Inline add-account bottom sheet (reused from the Accounts tab). On
+          create we auto-select the freshly added account so the user can carry
+          straight on with the expense/income they were entering. */}
+      <AnimatePresence>
+        {addOpen && (
+          <AddAccountSheet
+            key="quick-add-account"
+            editingId={null}
+            accounts={accounts}
+            onClose={() => setAddOpen(false)}
+            onCreated={(id) => onSelect(id)}
+          />
+        )}
+      </AnimatePresence>
     </FullSheet>
   )
 }
