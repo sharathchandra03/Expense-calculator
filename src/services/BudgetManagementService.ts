@@ -36,7 +36,7 @@ export class BudgetManagementService {
         const txDate = new Date(tx.date + 'T00:00:00')
         return (
           tx.type === 'expense' &&
-          tx.category === category &&
+          tx.category.toLowerCase() === category.toLowerCase() &&
           txDate >= start &&
           // end is exclusive (it's the start of the next period) so a
           // transaction on the boundary counts toward the new period only.
@@ -92,7 +92,7 @@ export class BudgetManagementService {
       .filter(b => b.isActive)
       .map(budget => {
         const { start, end } = this.getCurrentPeriod(budget)
-        const spent = this.calculateCategorySpend(transactions, budget.category, start, end)
+        const spent = this.calculateCategorySpend(transactions, budget.category, this.getTrackingStart(budget, start), end)
         return this.getBudgetStatus(budget, spent, end)
       })
   }
@@ -156,6 +156,15 @@ export class BudgetManagementService {
   }
 
   /**
+   * Date spending is counted from. Normally the period start; for a "start
+   * fresh" budget it is the later of the period start and the budget's
+   * trackFrom date, so earlier expenses in the same period are ignored.
+   */
+  static getTrackingStart(budget: Budget, periodStart: string): string {
+    return budget.trackFrom && budget.trackFrom > periodStart ? budget.trackFrom : periodStart
+  }
+
+  /**
    * Resolve the list of categories a budget tracks.
    * Multi-category budgets store them in `categories`; legacy budgets fall back
    * to the single `category` field. Empty means "all categories".
@@ -178,15 +187,15 @@ export class BudgetManagementService {
     startDate: string,
     endDate: string
   ): number {
-    const cats = this.getBudgetCategories(budget)
-    const start = new Date(startDate + 'T00:00:00')
+    const cats = this.getBudgetCategories(budget).map(c => c.toLowerCase())
+    const start = new Date(this.getTrackingStart(budget, startDate) + 'T00:00:00')
     const end = new Date(endDate + 'T00:00:00')
     return transactions
       .filter(tx => {
         if (tx.type !== 'expense') return false
         const txDate = new Date(tx.date + 'T00:00:00')
         if (txDate < start || txDate >= end) return false
-        return cats.length === 0 || cats.includes(tx.category)
+        return cats.length === 0 || cats.includes(tx.category.toLowerCase())
       })
       .reduce((sum, tx) => sum + tx.amount, 0)
   }
@@ -214,7 +223,7 @@ export class BudgetManagementService {
 
     return cats
       .map(category => {
-        const spent = this.calculateCategorySpend(transactions, category, start, end)
+        const spent = this.calculateCategorySpend(transactions, category, this.getTrackingStart(budget, start), end)
         const limit = limits[category] || 0
         const remaining = limit > 0 ? limit - spent : 0
         const percentUsed = limit > 0 ? Math.round((spent / limit) * 1000) / 10 : 0

@@ -16,6 +16,7 @@ import { sortCategories, setCategoryOrder, type CategoryType } from '@/lib/categ
 import {
   DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES,
   getDefaultCategory, setDefaultCategory, setDefaultCategoryMeta, resolveCategoryMeta,
+  getHiddenDefaults, saveHiddenDefaults,
 } from '@/lib/category-meta'
 import {
   ICON_SECTIONS, CATEGORY_COLORS, getIconComponent,
@@ -31,23 +32,6 @@ export interface CategoryItem {
   color?: string
   createdAt?: string
   cat?: CustomCategory
-}
-
-// ---------------------------------------------------------------------------
-// Hidden-defaults helpers (kept compatible with the old implementation)
-// ---------------------------------------------------------------------------
-
-function getHiddenDefaults(): string[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const stored = localStorage.getItem('pennyflow-hidden-categories')
-    if (stored) return JSON.parse(stored)
-  } catch {}
-  return []
-}
-
-function saveHiddenDefaults(hidden: string[]) {
-  localStorage.setItem('pennyflow-hidden-categories', JSON.stringify(hidden))
 }
 
 // ---------------------------------------------------------------------------

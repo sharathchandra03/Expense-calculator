@@ -17,6 +17,36 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DatePicker } from '@/components/ui/date-picker'
 import { useUndo } from '@/components/ui/undo-toast'
 import { useToast } from '@/components/ui/toast-notification'
+import { AccountSelect } from '@/components/ui/account-select'
+import { LendingService } from '@/services/LendingService'
+import { MoneyMovementService } from '@/services/MoneyMovementService'
+import { SmartDefaultsService } from '@/services/SmartDefaultsService'
+
+/** Pick a sensible default account: last used, else bank, else cash, else the first one. */
+function useDefaultAccount() {
+  const accounts = useLiveQuery(() => db.accounts.toArray())
+  const list = React.useMemo(() => (Array.isArray(accounts) ? accounts : []), [accounts])
+  const defaultId = React.useMemo(() => {
+    const last = SmartDefaultsService.getLastUsedAccount()
+    return (
+      (last && list.find(a => a.id === last)?.id) ||
+      list.find(a => a.type === 'bank')?.id ||
+      list.find(a => a.type === 'cash')?.id ||
+      list[0]?.id ||
+      ''
+    )
+  }, [list])
+  return { accounts: list, defaultId }
+}
+
+/** Small info line explaining which transaction will be created. */
+function ImpactNote({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-xl bg-primary/5 border border-primary/15 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
+      {children}
+    </p>
+  )
+}
 
 interface LendingRecord {
   id: string
@@ -25,7 +55,7 @@ interface LendingRecord {
   amount: number
   interestRate: number
   interestType: 'none' | 'simple' | 'compound'
-  expectedRepaymentDate: string
+  expectedRepaymentDate?: string
   status: 'active' | 'paid'
   createdAt: string
   description?: string
@@ -36,7 +66,8 @@ export function LendingDashboard() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showNewForm, setShowNewForm] = useState(false)
   // Confirmation dialog state
-  const [confirmAction, setConfirmAction] = useState<{ type: 'delete' | 'settle'; id: string; name: string } | null>(null)
+  const [confirmAction, setConfirmAction] = useState<{ type: 'delete'; id: string; name: string } | null>(null)
+  const [settleId, setSettleId] = useState<string | null>(null)
 
   const { showUndo } = useUndo()
   const lending = useLiveQuery(() => db.lending.toArray()) || []
@@ -106,19 +137,6 @@ export function LendingDashboard() {
       })
     } catch {
       // Delete failed silently
-    }
-  }
-
-  const handleMarkSettled = async (id: string) => {
-    const record = lending.find(l => l.id === id)
-    if (!record) return
-    try {
-      await db.lending.update(id, { status: 'paid' })
-      showUndo(`${record.contactName} marked as settled`, async () => {
-        await db.lending.update(id, { status: 'active' })
-      })
-    } catch {
-      // Update failed silently
     }
   }
 
@@ -362,7 +380,7 @@ export function LendingDashboard() {
 
                         {isActive && (
                           <button
-                            onClick={() => setConfirmAction({ type: 'settle', id: record.id, name: record.contactName })}
+                            onClick={() => setSettleId(record.id)}
                             className="px-3 py-1 bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold rounded-lg hover:bg-emerald-500/30 transition-colors"
                           >
                             Mark Settled
@@ -396,22 +414,36 @@ export function LendingDashboard() {
       </AnimatePresence>
 
       {/* Confirmation Dialog */}
+      {/* Settle: records the repayment as a real transaction */}
+      <AnimatePresence>
+        {settleId && (() => {
+          const rec = filteredLending.find(l => l.id === settleId) ?? lending.find(l => l.id === settleId)
+          if (!rec) return null
+          const accrued = 'accruedInterest' in rec ? Number((rec as { accruedInterest: number }).accruedInterest) || 0 : 0
+          return (
+            <SettleLendingModal
+              key={settleId}
+              record={rec as LendingRecord}
+              accruedInterest={accrued}
+              onClose={() => setSettleId(null)}
+              onSettled={(name, undo) => {
+                setSettleId(null)
+                showUndo(`${name} marked as settled`, undo)
+              }}
+            />
+          )
+        })()}
+      </AnimatePresence>
+
       <ConfirmDialog
         isOpen={!!confirmAction}
-        title={confirmAction?.type === 'delete' ? 'Delete Lending Record?' : 'Mark as Settled?'}
-        message={
-          confirmAction?.type === 'delete'
-            ? `Are you sure you want to delete the record for "${confirmAction.name}"? You can undo this action.`
-            : `Mark the record for "${confirmAction?.name}" as settled? You can undo this if done by mistake.`
-        }
-        confirmLabel={confirmAction?.type === 'delete' ? 'Delete' : 'Mark Settled'}
+        title="Delete Lending Record?"
+        message={`Are you sure you want to delete the record for "${confirmAction?.name ?? ''}"? You can undo this action.`}
+        confirmLabel="Delete"
         cancelLabel="Cancel"
-        variant={confirmAction?.type === 'delete' ? 'danger' : 'warning'}
+        variant="danger"
         onConfirm={() => {
-          if (confirmAction) {
-            if (confirmAction.type === 'delete') handleDelete(confirmAction.id)
-            else handleMarkSettled(confirmAction.id)
-          }
+          if (confirmAction) handleDelete(confirmAction.id)
           setConfirmAction(null)
         }}
         onCancel={() => setConfirmAction(null)}
@@ -422,6 +454,8 @@ export function LendingDashboard() {
 
 function NewLendingForm({ onClose }: { onClose: () => void }) {
   const { showToast } = useToast()
+  const { accounts, defaultId } = useDefaultAccount()
+  const [accountId, setAccountId] = useState('')
   const [data, setData] = useState({
     contactName: '',
     type: 'lent' as 'lent' | 'borrowed',
@@ -432,24 +466,41 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
     description: '',
   })
 
+  const effectiveAccountId = accountId || defaultId
+  const hasAccounts = accounts.length > 0
+  const amountNum = parseFloat(String(data.amount)) || 0
+
   const handleSubmit = async () => {
     if (!data.contactName || !data.amount || !data.expectedRepaymentDate) {
       showToast('Please fill in contact name, amount, and repayment date')
       return
     }
+    if (amountNum <= 0) {
+      showToast('Enter an amount greater than zero')
+      return
+    }
 
     try {
-      await db.lending.add({
-        id: generateUUID(),
-        ...data,
-        amount: parseFloat(String(data.amount)) || 0,
-        interestRate: parseFloat(String(data.interestRate)) || 0,
-        status: 'active',
-        createdAt: new Date().toISOString(),
-      } as any)
+      const recordMoney = hasAccounts && !!effectiveAccountId
+      await db.transaction('rw', LendingService.TABLES, async () => {
+        await db.lending.add({
+          id: generateUUID(),
+          ...data,
+          contactName: data.contactName.trim(),
+          amount: amountNum,
+          interestRate: parseFloat(String(data.interestRate)) || 0,
+          status: 'active',
+          createdAt: new Date().toISOString(),
+        })
+        if (recordMoney) {
+          await LendingService.recordNew(data.type, data.contactName.trim(), amountNum, effectiveAccountId)
+        }
+      })
+      showToast(recordMoney ? 'Saved and recorded in your transactions' : 'Lending record saved')
       onClose()
     } catch (err) {
       console.error('Error adding lending record:', err)
+      showToast('Could not save the record')
     }
   }
 
@@ -470,7 +521,7 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
       <div className="grid grid-cols-2 gap-2">
         <Select
           value={data.type}
-          onChange={(e) => setData({ ...data, type: e.target.value as any })}
+          onChange={(e) => setData({ ...data, type: e.target.value as 'lent' | 'borrowed' })}
         >
           <option value="lent">Lent</option>
           <option value="borrowed">Borrowed</option>
@@ -484,6 +535,23 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
         />
       </div>
 
+      {/* Which account the money moves through */}
+      {hasAccounts ? (
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase">
+            {data.type === 'lent' ? 'Paid from account' : 'Received in account'}
+          </label>
+          <AccountSelect value={effectiveAccountId} onChange={setAccountId} placeholder="Select account" />
+          {amountNum > 0 && (
+            <ImpactNote>
+              {LendingService.describeImpact(data.type, 'principal', amountNum)} Your account balance updates too.
+            </ImpactNote>
+          )}
+        </div>
+      ) : (
+        <ImpactNote>Add an account to also record this as a transaction.</ImpactNote>
+      )}
+
       <div className="grid grid-cols-2 gap-2">
         <Input
           type="number"
@@ -495,7 +563,7 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
 
         <Select
           value={data.interestType}
-          onChange={(e) => setData({ ...data, interestType: e.target.value as any })}
+          onChange={(e) => setData({ ...data, interestType: e.target.value as 'none' | 'simple' | 'compound' })}
         >
           <option value="none">No Interest</option>
           <option value="simple">Simple</option>
@@ -537,9 +605,11 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
 }
 
 
-function EditLendingForm({ recordId, lending, onClose }: { recordId: string; lending: any[]; onClose: () => void }) {
-  const record = lending.find((l: any) => l.id === recordId)
+function EditLendingForm({ recordId, lending, onClose }: { recordId: string; lending: LendingRecord[]; onClose: () => void }) {
+  const record = lending.find((l) => l.id === recordId)
   const { showToast } = useToast()
+  const { accounts, defaultId } = useDefaultAccount()
+  const [accountId, setAccountId] = useState('')
   const [activeTab, setActiveTab] = useState<'edit' | 'payment'>('edit')
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentNote, setPaymentNote] = useState('')
@@ -555,69 +625,80 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
 
   if (!record) return null
 
+  const kind = record.type
+  const effectiveAccountId = accountId || defaultId
+  const hasAccounts = accounts.length > 0
+  const canRecordMoney = hasAccounts && !!effectiveAccountId
+
+  // Outstanding principal as stored in the database (always fresh after a payment)
+  const outstanding = Number(record.amount) || 0
+  const newPrincipal = parseFloat(data.amount) || 0
+  const principalDelta = Math.round((newPrincipal - outstanding) * 100) / 100
+  const paymentNum = parseFloat(paymentAmount) || 0
+
   const handleSave = async () => {
     if (!data.contactName || !data.amount) return
+    if (newPrincipal <= 0) {
+      showToast('Enter an amount greater than zero')
+      return
+    }
     try {
-      await db.lending.update(recordId, {
-        contactName: data.contactName,
-        type: data.type,
-        amount: parseFloat(data.amount) || 0,
-        interestRate: parseFloat(data.interestRate) || 0,
-        interestType: data.interestType,
-        expectedRepaymentDate: data.expectedRepaymentDate,
-        description: data.description,
+      await db.transaction('rw', LendingService.TABLES, async () => {
+        await db.lending.update(recordId, {
+          contactName: data.contactName.trim(),
+          amount: newPrincipal,
+          interestRate: parseFloat(data.interestRate) || 0,
+          interestType: data.interestType,
+          expectedRepaymentDate: data.expectedRepaymentDate,
+          description: data.description,
+        })
+        // The amount changed: that money really moved, so record it.
+        if (principalDelta !== 0 && canRecordMoney) {
+          await LendingService.recordPrincipalChange(kind, data.contactName.trim(), principalDelta, effectiveAccountId)
+        }
       })
+      if (principalDelta !== 0 && canRecordMoney) showToast('Amount updated and recorded in your transactions')
       onClose()
     } catch {
-      // Save failed
+      showToast('Could not save changes')
     }
   }
 
   const handleRecordPayment = async () => {
-    const payment = parseFloat(paymentAmount)
-    if (!payment || payment <= 0) {
+    if (!paymentNum || paymentNum <= 0) {
       showToast('Please enter a valid payment amount')
       return
     }
-
-    const currentAmount = parseFloat(data.amount) || 0
-    if (payment > currentAmount) {
+    if (paymentNum > outstanding) {
       showToast('Payment cannot exceed the remaining amount')
       return
     }
 
-    const newAmount = currentAmount - payment
+    const newAmount = Math.round((outstanding - paymentNum) * 100) / 100
     try {
-      await db.transaction('rw', [db.lending, db.systemLogs], async () => {
-        if (newAmount <= 0) {
-          // Fully paid off
-          await db.lending.update(recordId, {
-            amount: 0,
-            status: 'paid',
-          })
+      await db.transaction('rw', LendingService.TABLES, async () => {
+        await db.lending.update(recordId, newAmount <= 0 ? { amount: 0, status: 'paid' } : { amount: newAmount })
+
+        if (canRecordMoney) {
+          // Creates the transaction, moves the account balance and writes the timeline log.
+          await LendingService.recordRepayment(kind, record.contactName, paymentNum, effectiveAccountId, paymentNote || undefined)
         } else {
-          await db.lending.update(recordId, {
-            amount: newAmount,
+          await db.systemLogs.add({
+            id: generateUUID(),
+            timestamp: new Date().toISOString(),
+            type: 'lending',
+            description: `Partial payment of ${formatCurrency(paymentNum)} ${kind === 'lent' ? 'received from' : 'paid to'} ${record.contactName}${paymentNote ? ` - ${paymentNote}` : ''}. Remaining: ${formatCurrency(newAmount)}`,
+            amount: paymentNum,
           })
         }
-
-        // Log the payment
-        await db.systemLogs.add({
-          id: generateUUID(),
-          timestamp: new Date().toISOString(),
-          type: 'lending',
-          description: `Partial payment of ${formatCurrency(payment)} received from ${record.contactName}${paymentNote ? ` - ${paymentNote}` : ''}. Remaining: ${formatCurrency(newAmount)}`,
-          amount: payment,
-        })
       })
 
-      showToast(`Payment of ${formatCurrency(payment)} recorded successfully`)
+      showToast(`Payment of ${formatCurrency(paymentNum)} recorded${canRecordMoney ? ' in your transactions' : ''}`)
       setPaymentAmount('')
       setPaymentNote('')
       if (newAmount <= 0) {
         onClose()
       } else {
-        // Update local state to reflect new amount
         setData({ ...data, amount: newAmount.toString() })
       }
     } catch {
@@ -684,13 +765,10 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
             />
 
             <div className="grid grid-cols-2 gap-2">
-              <Select
-                value={data.type}
-                onChange={(e) => setData({ ...data, type: e.target.value as any })}
-              >
-                <option value="lent">Lent</option>
-                <option value="borrowed">Borrowed</option>
-              </Select>
+              {/* Type is fixed once money has been recorded against it */}
+              <div className="flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-secondary text-[13px] font-semibold text-muted-foreground">
+                {kind === 'lent' ? 'Lent' : 'Borrowed'}
+              </div>
 
               <AmountInput
                 placeholder="Amount"
@@ -699,6 +777,26 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
                 className="text-sm"
               />
             </div>
+
+            {/* Amount changed: show exactly what will be recorded */}
+            {principalDelta !== 0 && newPrincipal > 0 && (
+              canRecordMoney ? (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase">
+                    {LendingService.txnType(kind, principalDelta > 0 ? 'principal' : 'repayment') === 'expense'
+                      ? 'Paid from account'
+                      : 'Received in account'}
+                  </label>
+                  <AccountSelect value={effectiveAccountId} onChange={setAccountId} placeholder="Select account" />
+                  <ImpactNote>
+                    Amount {principalDelta > 0 ? 'increased' : 'reduced'} by {formatCurrency(Math.abs(principalDelta))}.{' '}
+                    {LendingService.describeImpact(kind, principalDelta > 0 ? 'principal' : 'repayment', principalDelta)}
+                  </ImpactNote>
+                </div>
+              ) : (
+                <ImpactNote>Add an account to also record amount changes as transactions.</ImpactNote>
+              )
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               <Input
@@ -711,7 +809,7 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
 
               <Select
                 value={data.interestType}
-                onChange={(e) => setData({ ...data, interestType: e.target.value as any })}
+                onChange={(e) => setData({ ...data, interestType: e.target.value as 'none' | 'simple' | 'compound' })}
               >
                 <option value="none">No Interest</option>
                 <option value="simple">Simple</option>
@@ -750,17 +848,19 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
             {/* Payment Recording Section */}
             <div className="p-3 bg-secondary/50 rounded-xl border border-border/30 space-y-1">
               <p className="text-[10px] text-muted-foreground uppercase font-semibold">Outstanding Balance</p>
-              <p className="text-lg font-bold text-foreground">{formatCurrency(parseFloat(data.amount) || 0)}</p>
+              <p className="text-lg font-bold text-foreground">{formatCurrency(outstanding)}</p>
               <p className="text-[10px] text-muted-foreground">
-                {record.type === 'lent' ? 'Owed by' : 'Owed to'} {record.contactName}
+                {kind === 'lent' ? 'Owed by' : 'Owed to'} {record.contactName}
               </p>
             </div>
 
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-semibold text-muted-foreground uppercase">Payment Amount</label>
+                <label className="text-xs font-semibold text-muted-foreground uppercase">
+                  {kind === 'lent' ? 'Amount received' : 'Amount paid'}
+                </label>
                 <AmountInput
-                  placeholder="Enter amount received"
+                  placeholder={kind === 'lent' ? 'Enter amount received' : 'Enter amount paid'}
                   value={paymentAmount}
                   onChange={(val) => setPaymentAmount(val)}
                   className="text-sm mt-1.5"
@@ -770,8 +870,7 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
               {/* Quick amount buttons */}
               <div className="flex flex-wrap gap-2">
                 {[1000, 2000, 5000, 10000].map((amt) => {
-                  const currentAmt = parseFloat(data.amount) || 0
-                  if (amt > currentAmt) return null
+                  if (amt > outstanding) return null
                   return (
                     <button
                       key={amt}
@@ -783,12 +882,26 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
                   )
                 })}
                 <button
-                  onClick={() => setPaymentAmount(data.amount)}
+                  onClick={() => setPaymentAmount(String(outstanding))}
                   className="px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition-colors"
                 >
                   Full Amount
                 </button>
               </div>
+
+              {canRecordMoney ? (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase">
+                    {kind === 'lent' ? 'Received in account' : 'Paid from account'}
+                  </label>
+                  <AccountSelect value={effectiveAccountId} onChange={setAccountId} placeholder="Select account" />
+                  {paymentNum > 0 && (
+                    <ImpactNote>{LendingService.describeImpact(kind, 'repayment', paymentNum)} Your account balance updates too.</ImpactNote>
+                  )}
+                </div>
+              ) : (
+                <ImpactNote>Add an account to also record payments as transactions.</ImpactNote>
+              )}
 
               <div>
                 <label className="text-xs font-semibold text-muted-foreground uppercase">Note (optional)</label>
@@ -811,6 +924,129 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
             </div>
           </>
         )}
+      </motion.div>
+    </motion.div>
+  )
+}
+
+/* Settle: closes the record and records the final repayment as a real transaction. */
+function SettleLendingModal({
+  record,
+  accruedInterest,
+  onClose,
+  onSettled,
+}: {
+  record: LendingRecord
+  accruedInterest: number
+  onClose: () => void
+  onSettled: (name: string, undo: () => Promise<void>) => void
+}) {
+  const { showToast } = useToast()
+  const { accounts, defaultId } = useDefaultAccount()
+  const [accountId, setAccountId] = useState('')
+  const [recordMoney, setRecordMoney] = useState(true)
+
+  const kind = record.type
+  const principal = Number(record.amount) || 0
+  const interest = Math.round(accruedInterest * 100) / 100
+  const suggested = Math.round((principal + interest) * 100) / 100
+  const [amount, setAmount] = useState(String(suggested))
+
+  const effectiveAccountId = accountId || defaultId
+  const hasAccounts = accounts.length > 0
+  const amountNum = parseFloat(amount) || 0
+  const willRecord = recordMoney && hasAccounts && !!effectiveAccountId && amountNum > 0
+
+  const handleConfirm = async () => {
+    try {
+      let txId: string | null = null
+      await db.transaction('rw', LendingService.TABLES, async () => {
+        await db.lending.update(record.id, { status: 'paid' })
+        if (willRecord) {
+          txId = await LendingService.recordRepayment(kind, record.contactName, amountNum, effectiveAccountId, 'Settled')
+        }
+      })
+      const createdTxId = txId
+      onSettled(record.contactName, async () => {
+        await db.transaction('rw', LendingService.TABLES, async () => {
+          if (createdTxId) await MoneyMovementService.reverse(createdTxId)
+          await db.lending.update(record.id, { status: 'active' })
+        })
+      })
+    } catch {
+      showToast('Could not settle this record')
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm bg-card border border-border/60 rounded-3xl p-5 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-foreground">Mark as settled</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary" aria-label="Close">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="rounded-xl border border-border/30 bg-secondary/50 p-3 space-y-1.5 text-xs">
+          <div className="flex justify-between"><span className="text-muted-foreground">Principal</span><span className="font-semibold text-foreground">{formatCurrency(principal)}</span></div>
+          {interest > 0 && (
+            <div className="flex justify-between"><span className="text-muted-foreground">Accrued interest</span><span className="font-semibold text-emerald-500">{formatCurrency(interest)}</span></div>
+          )}
+          <div className="flex justify-between border-t border-border/30 pt-1.5"><span className="font-semibold text-foreground">Total due</span><span className="font-bold text-foreground">{formatCurrency(suggested)}</span></div>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-muted-foreground uppercase">
+            {kind === 'lent' ? 'Amount received' : 'Amount paid'}
+          </label>
+          <AmountInput value={amount} onChange={setAmount} className="text-sm mt-1.5" />
+        </div>
+
+        {hasAccounts ? (
+          <div className="space-y-2">
+            <label className="flex items-center gap-2.5 text-[13px] font-medium text-foreground cursor-pointer">
+              <input
+                type="checkbox"
+                checked={recordMoney}
+                onChange={(e) => setRecordMoney(e.target.checked)}
+                className="h-4 w-4 accent-primary"
+              />
+              Record this in my transactions
+            </label>
+            {recordMoney && (
+              <>
+                <label className="text-xs font-semibold text-muted-foreground uppercase block">
+                  {kind === 'lent' ? 'Received in account' : 'Paid from account'}
+                </label>
+                <AccountSelect value={effectiveAccountId} onChange={setAccountId} placeholder="Select account" />
+                {amountNum > 0 && (
+                  <ImpactNote>{LendingService.describeImpact(kind, 'repayment', amountNum)} Your account balance updates too.</ImpactNote>
+                )}
+              </>
+            )}
+          </div>
+        ) : (
+          <ImpactNote>Add an account to also record the settlement as a transaction.</ImpactNote>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          <Button onClick={handleConfirm} className="flex-1 text-sm">Mark Settled</Button>
+          <Button variant="outline" onClick={onClose} className="flex-1 text-sm">Cancel</Button>
+        </div>
       </motion.div>
     </motion.div>
   )

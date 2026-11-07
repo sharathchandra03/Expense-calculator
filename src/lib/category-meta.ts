@@ -40,6 +40,38 @@ export const DEFAULT_INCOME_CATEGORIES = [
   'Rental Income', 'Interest', 'Other',
 ]
 
+// ---------------------------------------------------------------------------
+// Hidden (removed) built-in defaults — shared by the Categories screen and every
+// category picker so a default removed in one place disappears everywhere.
+// ---------------------------------------------------------------------------
+
+const HIDDEN_KEY = 'pennyflow-hidden-categories'
+
+export function getHiddenDefaults(): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const stored = localStorage.getItem(HIDDEN_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (Array.isArray(parsed)) return parsed as string[]
+    }
+  } catch {}
+  return []
+}
+
+export function saveHiddenDefaults(hidden: string[]) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden))
+  } catch {}
+}
+
+/** Case-insensitive check: is this built-in default currently removed by the user? */
+export function isDefaultHidden(name: string, hidden: string[] = getHiddenDefaults()): boolean {
+  const lower = name.toLowerCase()
+  return hidden.some((h) => h.toLowerCase() === lower)
+}
+
 /** Built-in icon + color suggestions keyed by lowercase category name. */
 const BUILTIN_META: Record<string, Required<CategoryMeta>> = {
   // expense

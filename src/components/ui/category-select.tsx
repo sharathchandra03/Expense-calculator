@@ -12,6 +12,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { CustomCategories } from '@/components/modules/custom-categories'
 import {
   DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES, getDefaultCategory,
+  getHiddenDefaults, isDefaultHidden,
 } from '@/lib/category-meta'
 
 const DEFAULT_BILL = ['Utilities', 'Subscriptions', 'Insurance', 'Rent', 'Healthcare', 'Transport', 'Internet', 'Phone', 'Other']
@@ -60,22 +61,18 @@ export function CategorySelect({ type, value, onChange, placeholder, className, 
     return map
   }, [transactions])
 
-  const hiddenDefaults = useMemo(() => {
-    if (typeof window === 'undefined') return [] as string[]
-    try {
-      const stored = localStorage.getItem('pennyflow-hidden-categories')
-      if (stored) return JSON.parse(stored) as string[]
-    } catch {}
-    return [] as string[]
+  const hiddenDefaults = useMemo(
+    () => getHiddenDefaults(),
     // Recompute when the dropdown or manager opens so hidden-category edits reflect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, managerOpen])
+    [isOpen, managerOpen],
+  )
 
   const allCategories = useMemo<PickItem[]>(() => {
     const customNames = customCategories.map((c) => c.name.toLowerCase())
     const result: PickItem[] = []
     defaults.forEach((name) => {
-      if (!customNames.includes(name.toLowerCase()) && !hiddenDefaults.includes(name)) {
+      if (!customNames.includes(name.toLowerCase()) && !isDefaultHidden(name, hiddenDefaults)) {
         result.push({ name, isCustom: false })
       }
     })

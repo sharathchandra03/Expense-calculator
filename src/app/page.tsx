@@ -9,6 +9,7 @@ import { RecurringTransactionService } from '@/services/RecurringTransactionServ
 import { PlannedPaymentService } from '@/services/PlannedPaymentService'
 import { NotificationGenerator } from '@/services/NotificationGenerator'
 import { GoalService } from '@/services/GoalService'
+import { FinancialConnectionService, PENDING_FLAG } from '@/services/FinancialConnectionService'
 import { AnimatePresence, motion } from 'framer-motion'
 import { RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -46,6 +47,7 @@ const DayView = dynamic(() => import('@/components/modules/day-view').then(m => 
 const CalendarViewPage = dynamic(() => import('@/components/modules/calendar-view').then(m => ({ default: m.CalendarViewPage })), { ssr: false })
 const CustomView = dynamic(() => import('@/components/modules/custom-view').then(m => ({ default: m.CustomView })), { ssr: false })
 const PlannedPayments = dynamic(() => import('@/components/modules/planned-payments').then(m => ({ default: m.PlannedPayments })), { ssr: false })
+const ConnectAccounts = dynamic(() => import('@/components/modules/connect-accounts').then(m => ({ default: m.ConnectAccounts })), { ssr: false })
 const Statistics = dynamic(() => import('@/components/modules/statistics').then(m => ({ default: m.Statistics })), { ssr: false })
 
 export default function Home() {
@@ -95,6 +97,15 @@ export default function Home() {
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
 
+  // Automated bank sync: land on the connect screen after returning from a provider's
+  // consent page, and refresh stale connections in the background. Both are no-ops for
+  // users who never connected anything (no network call is made without a connection).
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(PENDING_FLAG)) setActiveTab('connect')
+    } catch {}
+    FinancialConnectionService.syncDueConnections().catch(() => {})
+  }, [])
   // Seed database on mount
   useEffect(() => {
     async function initDB() {
@@ -311,6 +322,8 @@ export default function Home() {
           return <CustomView key="customview" onNavigateToTab={(tab) => handleTabChange(tab)} />
         case 'plannedpayments':
           return <PlannedPayments key="plannedpayments" onNavigateToTab={(tab) => handleTabChange(tab as any)} />
+        case 'connect':
+          return <ConnectAccounts key="connect" />
         default:
           return <Dashboard key="dashboard" onNavigateToTab={(tab) => handleTabChange(tab)} />
       }

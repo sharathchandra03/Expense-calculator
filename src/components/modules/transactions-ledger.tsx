@@ -12,21 +12,19 @@ import { Trash2, Search, ArrowUpRight, ArrowDownRight, Tag, Calendar, Layers, Sh
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence, PanInfo, useMotionValue, useTransform } from 'framer-motion'
 import { useUndo } from '@/components/ui/undo-toast'
-import { getCategoryConfig } from '@/lib/category-icons'
 import { getConfigValue } from '@/lib/app-config'
-import { DatePicker } from '@/components/ui/date-picker'
-import { TimePicker } from '@/components/ui/time-picker'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/toast-notification'
-import { AccountSelect } from '@/components/ui/account-select'
+import { CategoryIcon } from '@/components/ui/category-icon'
+import { TransactionEditSheet } from '@/components/modules/transaction-edit-sheet'
+import { ImportService } from '@/services/ImportService'
 
 export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab: string) => void } = {}) {
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all')
   const [categoryFilter, setCategoryFilter] = useState('')
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editData, setEditData] = useState<{ amount: string; description: string; category: string; date: string; accountId: string; time: string }>({ amount: '', description: '', category: '', date: '', accountId: '', time: '' })
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [receiptLightbox, setReceiptLightbox] = useState<string | null>(null)
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date()
@@ -46,6 +44,13 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
   // Ensure arrays are never undefined
   const safeTransactions = Array.isArray(rawTransactions) ? rawTransactions : []
   const safeAccounts = Array.isArray(accounts) ? accounts : []
+
+  // Custom category rows, so each transaction shows the icon/colour you chose
+  const customCategories = useLiveQuery(() => db.customCategories.toArray())
+  const customByName = React.useMemo(
+    () => new Map((Array.isArray(customCategories) ? customCategories : []).map(c => [`${c.type}:${c.name.toLowerCase()}`, c])),
+    [customCategories]
+  )
 
   // Filter & Search Transactions
   const filteredTransactions = safeTransactions
@@ -136,6 +141,24 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
   // Handle Delete Transaction with Undo
   const handleDeleteTransaction = async (tx: Transaction) => {
     const { id, amount, type, accountId } = tx
+
+    // Imported bank entries: removing one only hides it from the ledger (so a later sync does not
+    // bring it back). The account balance is the bank's figure and must not change.
+    if (tx.source === 'imported' && tx.importedId) {
+      const importedId = tx.importedId
+      try {
+        await ImportService.hide(importedId)
+        await db.transactions.delete(id)
+        showUndo(`${tx.description || tx.category} removed`, async () => {
+          await ImportService.unhide(importedId)
+          await db.transactions.add(tx)
+        })
+      } catch (err) {
+        console.error('Failed to remove imported transaction:', err)
+      }
+      return
+    }
+
     const multiplier = type === 'expense' ? 1 : -1
     const delta = amount * multiplier
 
@@ -180,7 +203,8 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
 
     try {
       await db.transaction('rw', [db.transactions, db.accounts, db.assets, db.systemLogs], async () => {
-        await db.transactions.add({ ...tx, id: newId, date: todayStr })
+        // A copy is a manual entry, never a second "bank" record.
+        await db.transactions.add({ ...tx, id: newId, date: todayStr, source: 'manual', importedId: undefined, isSimulated: undefined, paymentMode: undefined, confidence: undefined })
         const account = await db.accounts.get(tx.accountId)
         if (account) {
           const delta = tx.type === 'expense' ? -tx.amount : tx.amount
@@ -209,57 +233,6 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
       })
     } catch (err) {
       console.error('Failed to duplicate:', err)
-    }
-  }
-
-  // Handle Edit Save - supports date, time, amount, description, category, account
-  const handleEditSave = async (tx: Transaction) => {
-    const newAmount = parseFloat(editData.amount)
-    if (isNaN(newAmount) || newAmount <= 0) return
-
-    const amountDiff = newAmount - tx.amount
-    const newAccountId = editData.accountId || tx.accountId
-    const accountChanged = newAccountId !== tx.accountId
-
-    try {
-      await db.transaction('rw', [db.transactions, db.accounts, db.assets], async () => {
-        await db.transactions.update(tx.id, {
-          amount: newAmount,
-          description: editData.description || tx.description,
-          category: editData.category || tx.category,
-          date: editData.date || tx.date,
-          time: editData.time || tx.time || undefined,
-          accountId: newAccountId,
-        })
-
-        if (accountChanged) {
-          const oldAccount = await db.accounts.get(tx.accountId)
-          if (oldAccount) {
-            const restoreAmount = tx.type === 'expense' ? tx.amount : -tx.amount
-            const restoredBalance = oldAccount.balance + restoreAmount
-            await db.accounts.update(tx.accountId, { balance: restoredBalance })
-            await syncAccountToAsset(oldAccount.name, restoredBalance)
-          }
-          const newAccount = await db.accounts.get(newAccountId)
-          if (newAccount) {
-            const deductAmount = tx.type === 'expense' ? -newAmount : newAmount
-            const newBalance = newAccount.balance + deductAmount
-            await db.accounts.update(newAccountId, { balance: newBalance })
-            await syncAccountToAsset(newAccount.name, newBalance)
-          }
-        } else if (amountDiff !== 0) {
-          const balanceDelta = tx.type === 'expense' ? -amountDiff : amountDiff
-          const account = await db.accounts.get(tx.accountId)
-          if (account) {
-            const newBalance = account.balance + balanceDelta
-            await db.accounts.update(tx.accountId, { balance: newBalance })
-            await syncAccountToAsset(account.name, newBalance)
-          }
-        }
-      })
-      setEditingId(null)
-    } catch (err) {
-      console.error('Failed to edit:', err)
     }
   }
 
@@ -396,8 +369,7 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
                   {/* Transaction Items */}
                   {dayTx.map((tx) => {
                     const account = safeAccounts.find((a) => a.id === tx.accountId)
-                    const isEditing = editingId === tx.id
-                    const catConfig = getCategoryConfig(tx.category)
+                    const customRow = customByName.get(`${tx.type}:${tx.category.toLowerCase()}`)
 
                     return (
                       <div key={tx.id} className="relative">
@@ -425,30 +397,25 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
                           className="relative bg-background"
                         >
                           <div
-                            onClick={() => {
-                              if (isEditing) return
-                              setEditingId(tx.id)
-                              setEditData({
-                                amount: tx.amount.toString(),
-                                description: tx.description,
-                                category: tx.category,
-                                date: tx.date,
-                                accountId: tx.accountId,
-                                time: tx.time || '',
-                              })
-                            }}
+                            onClick={() => setEditingTx(tx)}
                             className="flex items-center gap-3 px-5 py-3.5 border-b border-border/40 group hover:bg-secondary/30 transition-colors"
                           >
                             {/* Category icon */}
-                            <div className={cn("w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0", catConfig.bg)}>
-                              {catConfig.emoji}
-                            </div>
+                            <CategoryIcon name={tx.category} type={tx.type} isCustom={!!customRow} icon={customRow?.icon} color={customRow?.color} size={40} />
 
                             {/* Description & meta */}
                             <div className="flex-1 min-w-0">
                               <p className="text-[14px] font-semibold text-foreground truncate">{tx.description || tx.category}</p>
                               <div className="flex items-center gap-1 mt-0.5">
-                                <span className="text-[11px] text-muted-foreground capitalize truncate">{catConfig.label}</span>
+                                <span className="text-[11px] text-muted-foreground capitalize truncate">{tx.category}</span>
+                                {tx.source === 'imported' && (
+                                  <span className="flex-shrink-0 rounded bg-sky-500/15 px-1 text-[9px] font-bold uppercase tracking-wide text-sky-400">
+                                    {tx.paymentMode && tx.paymentMode !== 'OTHER' ? `Auto · ${tx.paymentMode.replace('_', ' ')}` : 'Auto'}
+                                  </span>
+                                )}
+                                {tx.isSimulated && (
+                                  <span className="flex-shrink-0 rounded bg-violet-500/15 px-1 text-[9px] font-bold uppercase tracking-wide text-violet-400">Sandbox</span>
+                                )}
                                 {tx.time && (
                                   <>
                                     <span className="text-[11px] text-muted-foreground/50">·</span>
@@ -467,44 +434,6 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
                             </div>
                           </div>
 
-                          <AnimatePresence>
-                            {isEditing && (
-                              <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                transition={{ duration: 0.2 }}
-                                className="overflow-hidden border-b border-border/30 bg-secondary/50"
-                              >
-                                <div className="p-3 space-y-2">
-                                  <div className="flex gap-2">
-                                    <input type="number" value={editData.amount} onChange={(e) => setEditData({ ...editData, amount: e.target.value })} className="w-24 h-8 px-2 rounded-lg bg-secondary border border-border text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-ring" placeholder="Amount" />
-                                    <input type="text" value={editData.description} onChange={(e) => setEditData({ ...editData, description: e.target.value })} className="flex-1 h-8 px-2 rounded-lg bg-secondary border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" placeholder="Description" />
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <DatePicker value={editData.date} onChange={(d) => setEditData({ ...editData, date: d })} className="flex-1" />
-                                    <TimePicker value={editData.time} onChange={(t) => setEditData({ ...editData, time: t })} className="flex-1" />
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <AccountSelect value={editData.accountId} onChange={(v) => setEditData({ ...editData, accountId: v })} placeholder="Account" className="h-9 text-xs" />
-                                  </div>
-                                  {tx.receiptImage && (
-                                    <button type="button" onClick={(e) => { e.stopPropagation(); setReceiptLightbox(tx.receiptImage!) }} className="flex items-center gap-2 p-2 rounded-lg bg-amber-500/5 border border-amber-500/20 hover:bg-amber-500/10 transition-colors">
-                                      <img src={tx.receiptImage} alt="Receipt" className="w-8 h-8 rounded object-cover" />
-                                      <span className="text-[10px] font-medium text-amber-500">View Receipt</span>
-                                    </button>
-                                  )}
-                                  <div className="flex items-center justify-between">
-                                    <input type="text" value={editData.category} onChange={(e) => setEditData({ ...editData, category: e.target.value })} className="w-32 h-8 px-2 rounded-lg bg-secondary border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring" placeholder="Category" />
-                                    <div className="flex gap-1.5">
-                                      <button onClick={(e) => { e.stopPropagation(); handleEditSave(tx) }} className="h-8 px-3 rounded-lg bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-500 transition-colors"><Check className="w-3 h-3 inline mr-1" />Save</button>
-                                      <button onClick={(e) => { e.stopPropagation(); setEditingId(null) }} className="h-8 px-2 rounded-lg bg-secondary text-muted-foreground text-[10px] font-bold hover:text-foreground transition-colors"><X className="w-3 h-3" /></button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
                         </motion.div>
                       </div>
                     )
@@ -563,6 +492,18 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
 
       {/* Receipt Lightbox */}
       <AnimatePresence>
+      {/* Edit transaction sheet */}
+      <AnimatePresence>
+        {editingTx && (
+          <TransactionEditSheet
+            key={editingTx.id}
+            tx={editingTx}
+            onClose={() => setEditingTx(null)}
+            onViewReceipt={(img) => setReceiptLightbox(img)}
+          />
+        )}
+      </AnimatePresence>
+
         {receiptLightbox && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -595,7 +536,9 @@ export function TransactionsLedger({ onNavigateToTab }: { onNavigateToTab?: (tab
         title={swipeConfirm?.type === 'delete' ? 'Delete Transaction?' : 'Duplicate Transaction?'}
         message={
           swipeConfirm?.type === 'delete'
-            ? `Are you sure you want to delete "${swipeConfirm.tx.description || swipeConfirm.tx.category}" (${formatCurrency(swipeConfirm.tx.amount)})? Your account balance will be restored.`
+            ? (swipeConfirm.tx.source === 'imported'
+                ? `Remove "${swipeConfirm.tx.description || swipeConfirm.tx.category}" (${formatCurrency(swipeConfirm.tx.amount)}) from your transactions? It came from your bank, so your account balance will not change, and it will not be imported again.`
+                : `Are you sure you want to delete "${swipeConfirm.tx.description || swipeConfirm.tx.category}" (${formatCurrency(swipeConfirm.tx.amount)})? Your account balance will be restored.`)
             : `This will create a copy of "${swipeConfirm?.tx.description || swipeConfirm?.tx.category}" (${formatCurrency(swipeConfirm?.tx.amount || 0)}) dated today.`
         }
         confirmLabel={swipeConfirm?.type === 'delete' ? 'Delete' : 'Duplicate'}

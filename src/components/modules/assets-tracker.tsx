@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, Asset, Lending, generateUUID, syncAssetToAccount, syncAccountToAsset } from '@/db/schema'
+import { db, Asset, Lending, generateUUID, syncAssetToAccount } from '@/db/schema'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -13,6 +13,8 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { Plus, TrendingUp, Handshake, Shield, Sparkles, CheckCircle, ChevronRight, Calculator, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
+import { NetWorthCard } from '@/components/ui/net-worth-card'
+import { LendingService } from '@/services/LendingService'
 
 export function AssetsTracker() {
   const [subTab, setSubTab] = useState<'assets' | 'lending'>('assets')
@@ -40,7 +42,6 @@ export function AssetsTracker() {
     .filter(l => l.type === 'borrowed' && l.status === 'active')
     .reduce((sum, l) => sum + l.amount, 0)
 
-  const netPosition = totalAssets + totalLent - totalBorrowed
 
   // Recharts Data Aggregator (historical net asset valuations over time)
   // Let's gather the dates and sum values of assets on those dates
@@ -167,31 +168,24 @@ export function AssetsTracker() {
     try {
       const cashAccount = accounts.find(a => a.type === 'cash') || accounts[0]
       const accrued = calculateAccruedInterest(item)
-      const totalAmount = item.amount + accrued
-      
-      // If we lent money, we receive it back (+Cash). If we borrowed, we pay it back (-Cash).
-      const delta = item.type === 'lent' ? totalAmount : -totalAmount
+      const totalAmount = Math.round((item.amount + accrued) * 100) / 100
 
-      await db.transaction('rw', [db.lending, db.accounts, db.systemLogs], async () => {
+      await db.transaction('rw', LendingService.TABLES, async () => {
         await db.lending.update(item.id, {
           status: 'paid',
         })
 
-        if (cashAccount) {
-          const newBal = cashAccount.balance + delta
-          await db.accounts.update(cashAccount.id, {
-            balance: newBal,
-          })
-          await syncAccountToAsset(cashAccount.name, newBal)
+        // Lent: the repayment comes back in. Borrowed: you pay it back out.
+        // Recorded as a real transaction so the ledger, balances and Statistics all agree.
+        if (cashAccount && totalAmount > 0) {
+          await LendingService.recordRepayment(
+            item.type,
+            item.contactName,
+            totalAmount,
+            cashAccount.id,
+            accrued > 0 ? 'Settled, including interest' : 'Settled',
+          )
         }
-
-        await db.systemLogs.add({
-          id: generateUUID(),
-          timestamp: new Date().toISOString(),
-          type: 'lending',
-          description: `Settled debt ledger: Received repayment of ${formatCurrency(totalAmount)} from ${item.contactName} (including interest)`,
-          amount: delta
-        })
       })
     } catch (err) {
       console.error('Failed to settle debt:', err)
@@ -307,17 +301,8 @@ export function AssetsTracker() {
             </motion.div>
           )}
 
-          {/* Aggregated Totals */}
-          <div className="grid grid-cols-2 gap-4">
-            <Card className="p-4">
-              <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">Asset Equity</p>
-              <h4 className="text-base font-bold text-foreground mt-0.5">{formatCurrency(totalAssets)}</h4>
-            </Card>
-            <Card className="p-4">
-              <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">Net Position</p>
-              <h4 className="text-base font-bold text-foreground mt-0.5">{formatCurrency(netPosition)}</h4>
-            </Card>
-          </div>
+          {/* Super total: accounts & assets + investments + lent out, minus borrowed */}
+          <NetWorthCard />
 
           {/* Assets Inventory List */}
           <div className="space-y-3">
@@ -410,6 +395,7 @@ export function AssetsTracker() {
       ) : (
         /* Lending & Interest Ledger */
         <div className="space-y-4">
+          <NetWorthCard />
           <div className="grid grid-cols-2 gap-4">
             <Card className="p-4">
               <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">Lent Out</p>

@@ -55,6 +55,13 @@ async function clearLocalUserData() {
     await db.templates.clear()
     await db.splits.clear()
     await db.sharedWallets.clear()
+    // Automated bank connections: imported financial data must not outlive the session.
+    await db.financialConnections.clear()
+    await db.linkedAccounts.clear()
+    await db.syncHistory.clear()
+    await db.importedTransactions.clear()
+    await db.transactionOverrides.clear()
+    await db.classificationPrefs.clear()
   } catch {
     // If some tables don't exist, that's fine
   }
@@ -83,6 +90,7 @@ async function clearLocalUserData() {
     'pennyflow-lock-biometric',
     'pennyflow-last-activity',
     'pennyflow-analytics-order',
+    'pennyflow-fin-pending',
   ]
   keysToRemove.forEach(key => localStorage.removeItem(key))
 }

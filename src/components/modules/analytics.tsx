@@ -5,9 +5,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/schema'
 import { formatCurrency, cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
-import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { ChevronLeft, ChevronRight, Download, Pencil } from 'lucide-react'
-import { getCategoryConfig, CHART_COLORS } from '@/lib/category-icons'
+import { CategoryBreakdown } from '@/components/ui/category-breakdown'
 
 /* ------------------------------------------------------------------ *
  * Types & constants
@@ -15,41 +14,6 @@ import { getCategoryConfig, CHART_COLORS } from '@/lib/category-icons'
 type Period = 'week' | 'month' | 'year' | 'custom'
 type CatMode = 'spending' | 'income'
 type PayMode = 'spending' | 'income' | 'transfers'
-
-const DONUT_COLORS = CHART_COLORS
-
-/* Renders a percentage label at the radial midpoint of each slice, so the
- * figure sits *inside* the donut ring (never clipped at the chart edge).
- * Slices smaller than 3% are skipped to avoid clutter; the exact figure for
- * every category is always shown in the ranked list below the donut. */
-const renderDonutLabel = (props: {
-  cx: number
-  cy: number
-  midAngle: number
-  innerRadius: number
-  outerRadius: number
-  percent: number
-}) => {
-  const { cx, cy, midAngle, innerRadius, outerRadius, percent } = props
-  if (percent * 100 < 3) return null
-  const RAD = Math.PI / 180
-  const radius = innerRadius + (outerRadius - innerRadius) / 2
-  const x = cx + radius * Math.cos(-midAngle * RAD)
-  const y = cy + radius * Math.sin(-midAngle * RAD)
-  return (
-    <text
-      x={x}
-      y={y}
-      fill="#ffffff"
-      textAnchor="middle"
-      dominantBaseline="central"
-      fontSize={11}
-      fontWeight={700}
-    >
-      {`${(percent * 100).toFixed(1)}%`}
-    </text>
-  )
-}
 
 /* Picks a font-size class based on the length of the formatted amount string,
  * so large values (lakhs / crores) shrink to fit instead of overflowing and
@@ -410,66 +374,13 @@ export function Analytics() {
             })}
           </div>
 
-          {categoryData.list.length > 0 ? (
-            <>
-              {/* Donut with % labels placed inside each slice */}
-              <div className="relative h-60 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsPie>
-                    <Pie
-                      data={categoryData.list}
-                      cx="50%" cy="50%"
-                      innerRadius={62} outerRadius={100}
-                      paddingAngle={2} dataKey="value" nameKey="name"
-                      stroke="none" animationDuration={600}
-                      label={renderDonutLabel}
-                      labelLine={false}
-                    >
-                      {categoryData.list.map((_, idx) => (
-                        <Cell key={idx} fill={DONUT_COLORS[idx % DONUT_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '14px', fontSize: '12px', boxShadow: 'var(--shadow-elevated)', padding: '10px 14px' }}
-                      itemStyle={{ color: 'var(--foreground)' }}
-                      formatter={(value: number, name: string) => {
-                        const pct = categoryData.total > 0 ? ((value / categoryData.total) * 100).toFixed(1) : '0'
-                        return [`${formatCurrency(value)} (${pct}%)`, getCategoryConfig(name).label]
-                      }}
-                    />
-                  </RechartsPie>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Ranked category list */}
-              <div className="space-y-1">
-                {categoryData.list.map((cat, idx) => {
-                  const cfg = getCategoryConfig(cat.name)
-                  const pct = categoryData.total > 0 ? (cat.value / categoryData.total) * 100 : 0
-                  return (
-                    <div key={cat.name} className="flex items-center gap-3 py-2.5 border-b border-border/40 last:border-0">
-                      <div className={cn('w-11 h-11 rounded-2xl flex items-center justify-center text-lg flex-shrink-0 ring-1 ring-black/5 dark:ring-white/5', cfg.bg)}>
-                        {cfg.emoji}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="block text-[15px] font-semibold text-foreground truncate">{cfg.label}</span>
-                        <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                          <span
-                            className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ background: DONUT_COLORS[idx % DONUT_COLORS.length] }}
-                          />
-                          {pct.toFixed(1)}%
-                        </span>
-                      </div>
-                      <span className="text-[15px] font-extrabold text-foreground flex-shrink-0">{formatCurrency(cat.value)}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </>
-          ) : (
-            <p className="text-center text-[13px] text-muted-foreground py-6">No {catMode} in this period.</p>
-          )}
+          <CategoryBreakdown
+            key={catMode}
+            items={categoryData.list.map(c => ({ name: c.name, value: c.value }))}
+            type={catMode === 'spending' ? 'expense' : 'income'}
+            variant="donut"
+            emptyText={`No ${catMode} in this period.`}
+          />
         </div>
       </div>
 

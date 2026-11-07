@@ -24,10 +24,14 @@ import {
   Calculator, Utensils, Wallet, AlignLeft, Hash, Paperclip,
   Save, ArrowLeftRight, Plus, Pencil, Search, CalendarClock,
 } from 'lucide-react'
-import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES } from '@/lib/category-meta'
+import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES, getHiddenDefaults, isDefaultHidden } from '@/lib/category-meta'
+import { sortCategories } from '@/lib/category-order'
 import { PlannedPaymentForm, type PlannedPaymentDraft } from '@/components/modules/planned-payment-form'
 import { PlannedPaymentService } from '@/services/PlannedPaymentService'
 import { AddAccountSheet } from '@/components/modules/account-manager'
+import { AccountSelect } from '@/components/ui/account-select'
+import { LendingService } from '@/services/LendingService'
+import { SmartDefaultsService } from '@/services/SmartDefaultsService'
 
 // Validation schemas
 const transactionSchema = z.object({
@@ -56,6 +60,8 @@ const lendingSchema = z.object({
   interestType: z.enum(['none', 'simple', 'compound']),
   expectedRepaymentDate: z.string().optional(),
   description: z.string().optional(),
+  // Account the lent money is paid from (falls back to the last-used account)
+  accountId: z.string().optional(),
 })
 
 const assetSchema = z.object({
@@ -354,12 +360,27 @@ export function QuickAddModal({ isOpen, onClose, onNavigateToTab }: QuickAddModa
 
   const onLendingSubmit = async (data: any) => {
     try {
-      await db.lending.add({
-        id: generateUUID(), contactName: data.contactName, type: 'lent', amount: data.amount,
-        interestRate: data.interestRate, interestType: data.interestType,
-        expectedRepaymentDate: data.expectedRepaymentDate || '', status: 'active',
-        createdAt: new Date().toISOString(), description: data.description,
-      } as any)
+      // Money leaves an account when you lend, so record it as a real transaction.
+      const allAccounts = await db.accounts.toArray()
+      const lastUsed = SmartDefaultsService.getLastUsedAccount()
+      const accountId: string =
+        (data.accountId && allAccounts.find(a => a.id === data.accountId)?.id) ||
+        (lastUsed && allAccounts.find(a => a.id === lastUsed)?.id) ||
+        allAccounts.find(a => a.type === 'bank')?.id ||
+        allAccounts[0]?.id ||
+        ''
+
+      await db.transaction('rw', LendingService.TABLES, async () => {
+        await db.lending.add({
+          id: generateUUID(), contactName: data.contactName, type: 'lent', amount: data.amount,
+          interestRate: data.interestRate, interestType: data.interestType,
+          expectedRepaymentDate: data.expectedRepaymentDate || '', status: 'active',
+          createdAt: new Date().toISOString(), description: data.description,
+        } as any)
+        if (accountId) {
+          await LendingService.recordNew('lent', data.contactName, data.amount, accountId)
+        }
+      })
       flashSaved()
     } catch (err) { console.error('Error saving lending:', err) }
   }
@@ -1428,16 +1449,31 @@ export function CategorySheet({ open, type, value, onClose, onSelect }: {
     [type],
   ) ?? []
 
+  const transactions = useLiveQuery(() => db.transactions.toArray()) ?? []
+
+  const usageCount = React.useMemo(() => {
+    const map: Record<string, number> = {}
+    const txs = Array.isArray(transactions) ? transactions : []
+    txs.forEach(tx => { if (tx?.category) map[tx.category] = (map[tx.category] || 0) + 1 })
+    return map
+  }, [transactions])
+
   const categories = React.useMemo(() => {
     const defaults = type === 'income' ? DEFAULT_INCOME_CATEGORIES : DEFAULT_EXPENSE_CATEGORIES
+    // Re-read on every open so defaults removed in the Categories screen vanish here too.
+    const hidden = getHiddenDefaults()
     const customNames = customCategories.map(c => c.name.toLowerCase())
-    const list: { name: string; isCustom: boolean; icon?: string; color?: string }[] = []
+    const list: { name: string; isCustom: boolean; icon?: string; color?: string; createdAt?: string }[] = []
     defaults.forEach(name => {
-      if (!customNames.includes(name.toLowerCase())) list.push({ name, isCustom: false })
+      if (!customNames.includes(name.toLowerCase()) && !isDefaultHidden(name, hidden)) {
+        list.push({ name, isCustom: false })
+      }
     })
-    customCategories.forEach(c => list.push({ name: c.name, isCustom: true, icon: c.icon, color: c.color }))
-    return list
-  }, [customCategories, type])
+    customCategories.forEach(c => list.push({ name: c.name, isCustom: true, icon: c.icon, color: c.color, createdAt: c.createdAt }))
+    // Same ordering as the Categories screen and the dropdown picker.
+    return sortCategories(list, type, usageCount)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customCategories, type, open, usageCount])
 
   const filtered = query.trim()
     ? categories.filter(c => c.name.toLowerCase().includes(query.toLowerCase()))
@@ -1599,6 +1635,17 @@ function LendingForm({ form, onSubmit }: any) {
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Amount</label>
         <AmountInput value={form.watch('amount') || ''} onChange={(val) => form.setValue('amount', val, { shouldValidate: true })} placeholder="0" className="mt-1 text-lg" />
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-muted-foreground uppercase">Paid from account</label>
+        <div className="mt-1">
+          <AccountSelect
+            value={form.watch('accountId') || ''}
+            onChange={(id) => form.setValue('accountId', id)}
+            placeholder="Last used account"
+          />
+        </div>
+        <p className="mt-1 text-[11px] text-muted-foreground">Recorded as a &quot;Lending&quot; expense and deducted from this account.</p>
       </div>
       <div>
         <label className="text-xs font-semibold text-muted-foreground uppercase">Interest Rate (%)</label>

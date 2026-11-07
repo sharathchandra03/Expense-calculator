@@ -3,11 +3,13 @@
 import React, { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type Transaction, type Account } from '@/db/schema'
-import { formatCurrency, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
 import { Share2, TrendingUp, TrendingDown, Minus, Download, FileJson } from 'lucide-react'
-import { getCategoryConfig, CHART_COLORS } from '@/lib/category-icons'
 import { CalendarDatePicker } from '@/components/ui/calendar-date-picker'
+import { Amount } from '@/components/ui/amount'
+import { NetWorthCard } from '@/components/ui/net-worth-card'
+import { CategoryBreakdown } from '@/components/ui/category-breakdown'
 
 /* ------------------------------------------------------------------ *
  * Types & constants
@@ -34,75 +36,6 @@ const RANGES: { key: RangeKey; label: string; days: number }[] = [
 const pctChange = (current: number, previous: number): number | null => {
   if (previous === 0) return current === 0 ? 0 : null
   return ((current - previous) / previous) * 100
-}
-
-/* ------------------------------------------------------------------ *
- * Amount — a currency value that NEVER truncates or wraps, and shrinks
- * its own font size when the formatted string gets long (lakhs / crores
- * / large multi-currency values). This is the single source of truth for
- * rendering money across the whole Statistics screen.
- *
- * `size` picks a base scale; the component steps down from that base as
- * the string grows so columns stay aligned and nothing collides.
- * ------------------------------------------------------------------ */
-type AmountSize = 'hero' | 'lg' | 'md' | 'sm'
-
-/* Font-size ladders per base size, chosen by formatted-string length.
- * Each ladder degrades gracefully so a ₹99,99,99,999.00 still fits. */
-const SIZE_LADDER: Record<AmountSize, { max: number; cls: string }[]> = {
-  hero: [
-    { max: 11, cls: 'text-[28px]' },
-    { max: 14, cls: 'text-[24px]' },
-    { max: 17, cls: 'text-[20px]' },
-    { max: 20, cls: 'text-[17px]' },
-    { max: Infinity, cls: 'text-[15px]' },
-  ],
-  lg: [
-    { max: 11, cls: 'text-[22px]' },
-    { max: 14, cls: 'text-[19px]' },
-    { max: 17, cls: 'text-[16px]' },
-    { max: 20, cls: 'text-[14px]' },
-    { max: Infinity, cls: 'text-[12.5px]' },
-  ],
-  md: [
-    { max: 12, cls: 'text-[15px]' },
-    { max: 15, cls: 'text-[14px]' },
-    { max: 18, cls: 'text-[12.5px]' },
-    { max: Infinity, cls: 'text-[11.5px]' },
-  ],
-  sm: [
-    { max: 13, cls: 'text-[13.5px]' },
-    { max: 16, cls: 'text-[12.5px]' },
-    { max: 19, cls: 'text-[11.5px]' },
-    { max: Infinity, cls: 'text-[10.5px]' },
-  ],
-}
-
-function Amount({
-  value,
-  size = 'md',
-  className,
-  signed = false,
-}: {
-  value: number
-  size?: AmountSize
-  className?: string
-  /** When true, renders a leading '-' for negatives (formatCurrency already does). */
-  signed?: boolean
-}) {
-  const text = signed
-    ? `${value < 0 ? '-' : ''}${formatCurrency(Math.abs(value))}`
-    : formatCurrency(value)
-  const ladder = SIZE_LADDER[size]
-  const sizeCls = (ladder.find(step => text.length <= step.max) ?? ladder[ladder.length - 1]).cls
-  return (
-    <span
-      className={cn('font-extrabold tabular-nums whitespace-nowrap leading-tight', sizeCls, className)}
-      title={text}
-    >
-      {text}
-    </span>
-  )
 }
 
 /* ------------------------------------------------------------------ *
@@ -450,7 +383,7 @@ function CashFlowSection({
     return { cur: build(currentTx), prev: build(previousTx) }
   }, [currentTx, previousTx, days])
 
-  const { cur, prev } = stats
+  const { cur } = stats
 
   const ROWS: { label: string; inc: number; exp: number; money: boolean }[] = [
     { label: 'Count', inc: cur.income.count, exp: cur.expense.count, money: false },
@@ -501,123 +434,120 @@ function CashFlowSection({
       </Card>
 
       {/* --- Income & Expenses Book --- */}
-      <Card>
-        <CardHead title="Income & Expenses Book" subtitle="Want to see where your money goes?" />
-        <div className="px-5 pb-5">
-          <div className="flex items-end justify-between gap-3 border-b border-border/60 pb-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Last {rangeLabel}</p>
-              <Amount value={cur.net} signed size="hero" className="text-foreground mt-0.5 block" />
-            </div>
-            <div className="text-right shrink-0">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">vs past period</p>
-              <DeltaChip value={pctChange(Math.abs(cur.net), Math.abs(prev.net))} />
-            </div>
-          </div>
-
-          {/* Income rollup + categories */}
-          <CategoryRollup
-            heading="Income"
-            headingColor="text-positive"
-            currentTx={currentTx}
-            previousTx={previousTx}
-            type="income"
-          />
-          <div className="h-px bg-border/50 my-4" />
-          <CategoryRollup
-            heading="Expenses"
-            headingColor="text-negative"
-            currentTx={currentTx}
-            previousTx={previousTx}
-            type="expense"
-          />
-        </div>
-      </Card>
+      <IncomeExpenseBook currentTx={currentTx} previousTx={previousTx} rangeLabel={rangeLabel} />
     </div>
   )
 }
 
-/* A heading row (Income / Expenses with totals + delta) followed by its
- * per-category breakdown. Layout rule for big numbers: the category name is
- * the ONLY element allowed to shrink/ellipsize; amounts and deltas are fixed
- * and never truncate. */
-function CategoryRollup({
-  heading,
-  headingColor,
+/* ------------------------------------------------------------------ *
+ * Income & Expenses Book
+ *
+ * Compact by design: a net figure, two selector tiles (Income / Expenses)
+ * and ONE category breakdown at a time showing the top rows, with the rest
+ * behind a "show more" expander. No more scrolling past two long lists.
+ * ------------------------------------------------------------------ */
+function IncomeExpenseBook({
   currentTx,
   previousTx,
-  type,
+  rangeLabel,
 }: {
-  heading: string
-  headingColor: string
   currentTx: Transaction[]
   previousTx: Transaction[]
-  type: 'income' | 'expense'
+  rangeLabel: string
 }) {
-  const data = React.useMemo(() => {
-    const sum = (list: Transaction[]) => {
-      const map: Record<string, number> = {}
-      let total = 0
-      list.filter(t => t.type === type).forEach(t => {
-        map[t.category] = (map[t.category] || 0) + t.amount
-        total += t.amount
-      })
-      return { map, total }
-    }
-    const cur = sum(currentTx)
-    const prev = sum(previousTx)
-    const cats = Object.entries(cur.map)
-      .map(([name, amount]) => ({
-        name,
-        amount,
-        delta: pctChange(amount, prev.map[name] ?? 0),
-      }))
-      .sort((a, b) => b.amount - a.amount)
-    return { cats, curTotal: cur.total, prevTotal: prev.total }
-  }, [currentTx, previousTx, type])
+  const [mode, setMode] = useState<'expense' | 'income'>('expense')
 
-  const invert = type === 'expense' // for expenses: increase = red
+  const data = React.useMemo(() => {
+    const build = (type: 'income' | 'expense') => {
+      const curMap: Record<string, number> = {}
+      const prevMap: Record<string, number> = {}
+      let curTotal = 0
+      let prevTotal = 0
+      currentTx.filter(t => t.type === type).forEach(t => {
+        curMap[t.category] = (curMap[t.category] || 0) + t.amount
+        curTotal += t.amount
+      })
+      previousTx.filter(t => t.type === type).forEach(t => {
+        prevMap[t.category] = (prevMap[t.category] || 0) + t.amount
+        prevTotal += t.amount
+      })
+      const items = Object.entries(curMap).map(([name, value]) => ({
+        name,
+        value,
+        delta: pctChange(value, prevMap[name] ?? 0),
+      }))
+      return { items, curTotal, prevTotal }
+    }
+    return { income: build('income'), expense: build('expense') }
+  }, [currentTx, previousTx])
+
+  const net = data.income.curTotal - data.expense.curTotal
+  const prevNet = data.income.prevTotal - data.expense.prevTotal
+
+  const tiles: { key: 'income' | 'expense'; label: string; color: string }[] = [
+    { key: 'income', label: 'Income', color: 'var(--positive)' },
+    { key: 'expense', label: 'Expenses', color: 'var(--negative)' },
+  ]
 
   return (
-    <div className="mt-4">
-      {/* rollup header */}
-      <div className="flex items-center gap-3 rounded-xl bg-secondary/50 px-3.5 py-2.5">
-        <span className={cn('flex-1 min-w-0 text-[14px] font-bold truncate', headingColor)}>{heading}</span>
-        <Amount value={data.curTotal} size="md" className="text-foreground shrink-0" />
-        <div className="w-[52px] text-right shrink-0">
-          <DeltaChip value={pctChange(data.curTotal, data.prevTotal)} invert={invert} />
+    <Card>
+      <CardHead title="Income & Expenses Book" subtitle="Want to see where your money goes?" />
+      <div className="px-5 pb-5">
+        {/* Net */}
+        <div className="flex items-end justify-between gap-3 pb-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Net · Last {rangeLabel}</p>
+            <Amount value={net} signed size="hero" className={cn('mt-0.5 block', net < 0 ? 'text-negative' : 'text-foreground')} />
+          </div>
+          <div className="shrink-0 text-right">
+            <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">vs past period</p>
+            <DeltaChip value={pctChange(Math.abs(net), Math.abs(prevNet))} />
+          </div>
         </div>
-      </div>
 
-      {/* per-category list */}
-      {data.cats.length > 0 ? (
-        <div className="mt-1">
-          {data.cats.map((c, idx) => {
-            const cfg = getCategoryConfig(c.name)
+        {/* Selector tiles */}
+        <div className="grid grid-cols-2 gap-3" role="tablist" aria-label="Income or expenses">
+          {tiles.map(t => {
+            const active = mode === t.key
+            const d = data[t.key]
             return (
-              <motion.div
-                key={c.name}
-                initial={{ opacity: 0, x: -6 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: Math.min(idx * 0.03, 0.3) }}
-                className="flex items-center gap-3 py-2.5 border-b border-border/30 last:border-0"
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setMode(t.key)}
+                className={cn(
+                  'min-w-0 rounded-2xl border px-3.5 py-3 text-left transition-colors',
+                  active ? 'bg-secondary/70' : 'border-border/60 bg-transparent hover:bg-secondary/40',
+                )}
+                style={active ? { borderColor: t.color } : undefined}
               >
-                <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ring-1 ring-black/5 dark:ring-white/5', cfg.bg)}>
-                  {cfg.emoji}
-                </div>
-                <span className="flex-1 min-w-0 text-[14px] font-semibold text-foreground truncate">{cfg.label}</span>
-                <Amount value={c.amount} size="md" className="text-foreground shrink-0" />
-                <div className="w-[52px] text-right shrink-0">
-                  <DeltaChip value={c.delta} invert={invert} />
-                </div>
-              </motion.div>
+                <span className="flex items-center gap-1.5 text-[12px] font-bold text-muted-foreground">
+                  <span className="h-2 w-2 rounded-full" style={{ background: t.color }} />
+                  {t.label}
+                </span>
+                <Amount value={d.curTotal} size="md" className="mt-1 block text-foreground" />
+                <span className="mt-1 block">
+                  <DeltaChip value={pctChange(d.curTotal, d.prevTotal)} invert={t.key === 'expense'} />
+                </span>
+              </button>
             )
           })}
         </div>
-      ) : (
-        <p className="text-center text-[13px] text-muted-foreground py-4">No {type} in this period.</p>
-      )}
-    </div>
+
+        {/* Breakdown for the selected side */}
+        <CategoryBreakdown
+          key={mode}
+          className="mt-5"
+          items={data[mode].items}
+          type={mode}
+          variant="bar"
+          emptyText={`No ${mode === 'income' ? 'income' : 'expenses'} in this period.`}
+          renderDelta={item => <DeltaChip value={item.delta ?? null} invert={mode === 'expense'} />}
+        />
+      </div>
+    </Card>
   )
 }
 
@@ -673,47 +603,15 @@ function CategoryBook({
           </div>
         </div>
 
-        {data.cats.length > 0 ? (
-          <div className="space-y-4 mt-4">
-            {data.cats.map((c, idx) => {
-              const cfg = getCategoryConfig(c.name)
-              const color = CHART_COLORS[idx % CHART_COLORS.length]
-              return (
-                <motion.div
-                  key={c.name}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: Math.min(idx * 0.04, 0.4) }}
-                >
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className={cn('w-10 h-10 rounded-2xl flex items-center justify-center text-lg shrink-0 ring-1 ring-black/5 dark:ring-white/5', cfg.bg)}>
-                      {cfg.emoji}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="block text-[14px] font-semibold text-foreground truncate">{cfg.label}</span>
-                      <span className="text-[12px] text-muted-foreground">{c.pct.toFixed(1)}%</span>
-                    </div>
-                    <div className="text-right shrink-0 flex flex-col items-end">
-                      <Amount value={c.amount} size="md" className="text-foreground" />
-                      <DeltaChip value={c.delta} invert />
-                    </div>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
-                    <motion.div
-                      className="h-full rounded-full"
-                      style={{ background: color }}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.min(100, c.pct)}%` }}
-                      transition={{ duration: 0.5 }}
-                    />
-                  </div>
-                </motion.div>
-              )
-            })}
-          </div>
-        ) : (
-          <p className="text-center text-[13px] text-muted-foreground py-8">No spending in this period.</p>
-        )}
+        <CategoryBreakdown
+          key={mode}
+          className="mt-5"
+          items={data.cats.map(c => ({ name: c.name, value: c.amount, delta: c.delta }))}
+          type={mode}
+          variant="donut"
+          emptyText={`No ${mode === 'income' ? 'income' : 'spending'} in this period.`}
+          renderDelta={item => <DeltaChip value={item.delta ?? null} invert={mode === 'expense'} />}
+        />
       </div>
     </Card>
   )
@@ -928,7 +826,7 @@ function ReportsSection({
       <Card>
         <CardHead title="Income categories" />
         <div className="px-5 pb-5">
-          <CategoryList cats={r.incomeCats} invert={false} />
+          <CategoryBreakdown items={r.incomeCats.map(c => ({ name: c.category, value: c.amount }))} type="income" variant="bar" emptyText="No income in this period." />
         </div>
       </Card>
 
@@ -936,7 +834,7 @@ function ReportsSection({
       <Card>
         <CardHead title="Expense categories" />
         <div className="px-5 pb-5">
-          <CategoryList cats={r.expenseCats} invert />
+          <CategoryBreakdown items={r.expenseCats.map(c => ({ name: c.category, value: c.amount }))} type="expense" variant="bar" emptyText="No expenses in this period." />
         </div>
       </Card>
 
@@ -962,50 +860,6 @@ function ReportsSection({
   )
 }
 
-/* A simple ranked category list with percentage bar — big-number safe. */
-function CategoryList({
-  cats,
-  invert,
-}: {
-  cats: { category: string; amount: number; pct: number }[]
-  invert: boolean
-}) {
-  if (cats.length === 0) {
-    return <p className="text-center text-[13px] text-muted-foreground py-4">Nothing in this period.</p>
-  }
-  return (
-    <div className="space-y-4">
-      {cats.map((c, idx) => {
-        const cfg = getCategoryConfig(c.category)
-        const color = CHART_COLORS[idx % CHART_COLORS.length]
-        return (
-          <div key={c.category}>
-            <div className="flex items-center gap-3 mb-2">
-              <div className={cn('w-10 h-10 rounded-2xl flex items-center justify-center text-lg shrink-0 ring-1 ring-black/5 dark:ring-white/5', cfg.bg)}>
-                {cfg.emoji}
-              </div>
-              <div className="flex-1 min-w-0">
-                <span className="block text-[14px] font-semibold text-foreground truncate">{cfg.label}</span>
-                <span className="text-[12px] text-muted-foreground">{c.pct.toFixed(1)}%</span>
-              </div>
-              <Amount value={c.amount} size="md" className={cn('shrink-0', invert ? 'text-foreground' : 'text-foreground')} />
-            </div>
-            <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
-              <motion.div
-                className="h-full rounded-full"
-                style={{ background: color }}
-                initial={{ width: 0 }}
-                animate={{ width: `${Math.min(100, c.pct)}%` }}
-                transition={{ duration: 0.5 }}
-              />
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 /* ------------------------------------------------------------------ *
  * Assets: account balances overview
  * ------------------------------------------------------------------ */
@@ -1014,8 +868,10 @@ function AssetsSection({ accounts }: { accounts: Account[] }) {
   const total = positive.reduce((s, a) => s + a.balance, 0)
 
   return (
+    <div className="space-y-5">
+    <NetWorthCard />
     <Card>
-      <CardHead title="Assets" subtitle="Balances across your accounts" />
+      <CardHead title="Account balances" subtitle="Cash, bank and wallet accounts" />
       <div className="px-5 pb-5">
         <div className="rounded-2xl bg-secondary/60 px-4 py-4 mb-4">
           <p className="text-[12px] font-semibold text-muted-foreground">Total balance</p>
@@ -1045,5 +901,6 @@ function AssetsSection({ accounts }: { accounts: Account[] }) {
         )}
       </div>
     </Card>
+    </div>
   )
 }

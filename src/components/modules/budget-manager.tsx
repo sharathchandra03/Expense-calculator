@@ -17,10 +17,15 @@ import { BudgetManagementService } from '@/services/BudgetManagementService'
 import { useToast } from '@/components/ui/toast-notification'
 import { useUndo } from '@/components/ui/undo-toast'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { DEFAULT_EXPENSE_CATEGORIES } from '@/lib/category-meta'
+import { useCategoryItems } from '@/components/modules/custom-categories'
 
 type Period = 'monthly' | 'yearly'
 type View = 'list' | 'add' | 'analysis'
+
+/** Local YYYY-MM-DD for a Date (no timezone drift). */
+function toLocalYMD(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 /** First day of a given month (YYYY-MM-01) */
 function monthStart(year: number, month: number): string {
@@ -97,12 +102,16 @@ function CategoryPickerBody({
   const [local, setLocal] = useState<string[]>(selected)
   const [query, setQuery] = useState('')
 
-  const all = DEFAULT_EXPENSE_CATEGORIES
+  // Same live list as the Categories screen: your custom categories are
+  // included and defaults you removed are not offered.
+  const { expenseItems } = useCategoryItems()
+  const itemByName = useMemo(() => new Map(expenseItems.map(i => [i.name, i])), [expenseItems])
+  const all = useMemo(() => expenseItems.map(i => i.name), [expenseItems])
   const filtered = useMemo(
     () => all.filter(c => c.toLowerCase().includes(query.toLowerCase())),
     [all, query]
   )
-  const allSelected = local.length === all.length
+  const allSelected = all.length > 0 && all.every(c => local.includes(c))
 
   const toggle = (c: string) =>
     setLocal(prev => (prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]))
@@ -162,7 +171,15 @@ function CategoryPickerBody({
                 onClick={() => toggle(cat)}
                 className="w-full flex items-center gap-3 p-3 rounded-2xl bg-secondary/40 hover:bg-secondary/70 transition-colors"
               >
-                <CategoryIcon name={cat} type="expense" size={38} iconSize={18} />
+                <CategoryIcon
+                  name={cat}
+                  type="expense"
+                  isCustom={itemByName.get(cat)?.isCustom}
+                  icon={itemByName.get(cat)?.icon}
+                  color={itemByName.get(cat)?.color}
+                  size={38}
+                  iconSize={18}
+                />
                 <span className="flex-1 text-left text-[14px] font-medium text-foreground">{cat}</span>
                 <span className={cn(
                   'w-6 h-6 rounded-full flex items-center justify-center border-2 transition-colors',
@@ -513,6 +530,11 @@ function BudgetAnalysis({
         <div className="mb-2">
           <h3 className="text-[20px] font-bold text-foreground leading-tight">{budget.name}</h3>
           <p className="text-[13px] text-muted-foreground">{label}</p>
+          {budget.trackFrom && budget.trackFrom > BudgetManagementService.getCurrentPeriod(budget).start && (
+            <p className="mt-1 text-[12px] text-muted-foreground">
+              Counting spending from {new Date(budget.trackFrom + 'T00:00:00').toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+            </p>
+          )}
         </div>
         <BudgetGauge remaining={budget.limit - status.spent} pct={status.percentUsed} />
         <div className="flex items-end justify-between mt-3">
@@ -613,6 +635,37 @@ function BudgetAnalysis({
   )
 }
 
+/** Radio-style option card used to choose how spending is counted. */
+function TrackOption({
+  selected, onSelect, title, description,
+}: { selected: boolean; onSelect: () => void; title: string; description: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      role="radio"
+      aria-checked={selected}
+      className={cn(
+        'w-full flex items-start gap-3 rounded-2xl border p-4 text-left transition-colors',
+        selected ? 'border-primary/50 bg-primary/5' : 'border-border/60 bg-secondary/30 hover:border-border'
+      )}
+    >
+      <span
+        className={cn(
+          'mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2',
+          selected ? 'border-primary bg-primary' : 'border-border'
+        )}
+      >
+        {selected && <Check className="h-3 w-3 text-primary-foreground" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[14px] font-semibold text-foreground">{title}</span>
+        <span className="mt-0.5 block text-[12.5px] leading-snug text-muted-foreground">{description}</span>
+      </span>
+    </button>
+  )
+}
+
 /* ================================================================== *
  * Add / Edit budget flow — two steps
  *  Step 1: period + total limit + category selection
@@ -635,11 +688,17 @@ function AddBudgetFlow({
   const [year, setYear] = useState(() => existing ? new Date(existing.startDate + 'T00:00:00').getFullYear() : now.getFullYear())
   const [month, setMonth] = useState(() => existing ? new Date(existing.startDate + 'T00:00:00').getMonth() : now.getMonth())
   const [limit, setLimit] = useState<string>(existing ? String(existing.limit) : '')
-  const [categories, setCategories] = useState<string[]>(
-    existing?.categories && existing.categories.length > 0
-      ? existing.categories
-      : [...DEFAULT_EXPENSE_CATEGORIES]
+  // Live, hidden-aware category list (same source as the Categories screen).
+  const { expenseItems } = useCategoryItems()
+  const allNames = useMemo(() => expenseItems.map(i => i.name), [expenseItems])
+  const itemByName = useMemo(() => new Map(expenseItems.map(i => [i.name, i])), [expenseItems])
+  // null means "all categories" and follows your category list as it loads/changes.
+  const [pickedCategories, setPickedCategories] = useState<string[] | null>(
+    existing?.categories && existing.categories.length > 0 ? existing.categories : null
   )
+  const categories = pickedCategories ?? allNames
+  const [trackMode, setTrackMode] = useState<'include' | 'fresh'>(existing?.trackFrom ? 'fresh' : 'include')
+  const allTransactions = useLiveQuery(() => db.transactions.toArray())
   const [catLimits, setCatLimits] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {}
     if (existing?.categoryLimits) {
@@ -656,6 +715,22 @@ function AddBudgetFlow({
   const periodLabel = period === 'monthly'
     ? new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     : String(year)
+
+  // Period window and whether it is already underway (spending may exist before today).
+  const periodStartStr = period === 'monthly' ? monthStart(year, month) : yearStart(year)
+  const periodEndStr = period === 'monthly' ? monthEnd(year, month) : yearEnd(year)
+  const todayStr = toLocalYMD(now)
+  const midPeriod = todayStr >= periodStartStr && todayStr < periodEndStr && todayStr > periodStartStr
+  const startLabel = new Date(periodStartStr + 'T00:00:00').toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+
+  // What is already spent in the chosen categories since the period began.
+  const spentSoFar = useMemo(() => {
+    if (!midPeriod || !Array.isArray(allTransactions)) return 0
+    const wanted = new Set(categories.map(c => c.toLowerCase()))
+    return allTransactions
+      .filter(t => t.type === 'expense' && t.date >= periodStartStr && t.date <= todayStr && wanted.has(t.category.toLowerCase()))
+      .reduce((sum, t) => sum + t.amount, 0)
+  }, [midPeriod, allTransactions, categories, periodStartStr, todayStr])
 
   const handleNext = () => {
     if (!name.trim()) { showToast('Give this budget a name'); return }
@@ -677,7 +752,14 @@ function AddBudgetFlow({
       if (v > 0) limitsMap[c] = v
     })
 
+    // 'Start fresh' only applies while the period is underway; keep the original
+    // start date if this budget was already fresh so editing doesn't reset it.
+    const trackFrom = midPeriod && trackMode === 'fresh'
+      ? (existing?.trackFrom && existing.trackFrom > start ? existing.trackFrom : todayStr)
+      : undefined
+
     const payload = {
+      trackFrom,
       name: name.trim() || `${periodLabel} Budget`,
       category: categories[0] || '',
       categories,
@@ -744,7 +826,7 @@ function AddBudgetFlow({
         <div className="space-y-3">
           {categories.map(cat => (
             <div key={cat} className="card-surface p-3 rounded-2xl flex items-center gap-3">
-              <CategoryIcon name={cat} type="expense" size={40} iconSize={20} />
+              <CategoryIcon name={cat} type="expense" isCustom={itemByName.get(cat)?.isCustom} icon={itemByName.get(cat)?.icon} color={itemByName.get(cat)?.color} size={40} iconSize={20} />
               <span className="flex-1 text-[15px] font-semibold text-foreground">{cat}</span>
               <div className="w-32">
                 <AmountInput
@@ -864,19 +946,47 @@ function AddBudgetFlow({
           <ChevronRight className="w-5 h-5 text-muted-foreground" />
         </div>
         <p className="text-[13px] text-muted-foreground mb-4">
-          {categories.length === DEFAULT_EXPENSE_CATEGORIES.length
+          {pickedCategories === null || (allNames.length > 0 && allNames.every(n => categories.includes(n)))
             ? 'All categories included in your budget'
             : `${categories.length} categories included`}
         </p>
         <div className="flex gap-4 overflow-x-auto pb-1">
           {categories.slice(0, 6).map(cat => (
             <div key={cat} className="flex flex-col items-center gap-1.5 flex-shrink-0 w-16">
-              <CategoryIcon name={cat} type="expense" size={46} iconSize={22} />
+              <CategoryIcon name={cat} type="expense" isCustom={itemByName.get(cat)?.isCustom} icon={itemByName.get(cat)?.icon} color={itemByName.get(cat)?.color} size={46} iconSize={22} />
               <span className="text-[10px] text-muted-foreground text-center leading-tight line-clamp-2">{cat}</span>
             </div>
           ))}
         </div>
       </button>
+
+      {/* Mid-period: let the user choose whether earlier spending counts */}
+      {midPeriod && (
+        <div className="card-surface p-5 rounded-2xl mt-4">
+          <p className="text-[16px] font-bold text-foreground">What should count toward this budget?</p>
+          <p className="text-[13px] text-muted-foreground mt-1 mb-4">
+            This {period === 'monthly' ? 'month' : 'year'} started on {startLabel}, so you may have already spent some money.
+          </p>
+          <div className="space-y-3">
+            <TrackOption
+              selected={trackMode === 'include'}
+              onSelect={() => setTrackMode('include')}
+              title={`Include spending since ${startLabel}`}
+              description={
+                spentSoFar > 0
+                  ? `${formatCurrency(spentSoFar)} already spent in these categories will count toward your limit.`
+                  : 'Nothing spent in these categories yet, so both options start at zero.'
+              }
+            />
+            <TrackOption
+              selected={trackMode === 'fresh'}
+              onSelect={() => setTrackMode('fresh')}
+              title="Start fresh from today"
+              description="Ignore anything spent before today. Only new expenses count toward this budget."
+            />
+          </div>
+        </div>
+      )}
 
       <div className="pt-6">
         <Button onClick={handleNext} size="lg" className="w-full">Next</Button>
@@ -887,7 +997,7 @@ function AddBudgetFlow({
         selected={categories}
         onClose={() => setPickerOpen(false)}
         onDone={(cats) => {
-          setCategories(cats)
+          setPickedCategories(cats)
           // Drop limits for removed categories
           setCatLimits(prev => {
             const next: Record<string, string> = {}

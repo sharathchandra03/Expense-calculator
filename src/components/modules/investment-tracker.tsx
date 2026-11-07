@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useUndo } from '@/components/ui/undo-toast'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
+import { NetWorthCard } from '@/components/ui/net-worth-card'
 
 export function InvestmentTracker() {
   const [isAdding, setIsAdding] = useState(false)
@@ -74,6 +75,9 @@ export function InvestmentTracker() {
   return (
     <div className="flex flex-col space-y-5 pb-6">
       <PageHeader title="Investment Portfolio" subtitle="Track your holdings, allocation and gains." />
+
+      {/* Super total: investments are part of total assets, shown alongside accounts and lending */}
+      <NetWorthCard title="Net worth (all assets)" />
 
       {/* Portfolio Summary */}
       <div className="grid grid-cols-2 gap-3">

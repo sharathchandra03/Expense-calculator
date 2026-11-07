@@ -6,7 +6,7 @@ import {
   Clock, Wallet, Tag, RefreshCw, Crown, ChevronRight,
   BarChart3, LayoutDashboard, PieChart, Settings as SettingsIcon,
   HelpCircle, Bell, ShieldCheck, Pencil, AlertTriangle,
-  Users, CreditCard, Camera, TrendingUp, Landmark, Upload, HeartHandshake, Target, TrendingDown,
+  Users, CreditCard, Link2, Camera, TrendingUp, Landmark, Upload, HeartHandshake, Target, TrendingDown,
   Megaphone, Star, MessageSquare, Info, LogOut, CalendarDays, SlidersHorizontal, Rows3,
   CalendarClock,
 } from 'lucide-react'
@@ -70,6 +70,7 @@ const TRANSACTION_VIEWS: GridItem[] = [
 // Secondary feature grid — the rest of the modules, grouped under "Manage".
 const MANAGE_GRID: GridItem[] = [
   { id: 'accounts', label: 'Accounts', icon: CreditCard, color: 'text-indigo-400' },
+  { id: 'connect', label: 'Connect Banks', icon: Link2, color: 'text-sky-400' },
   { id: 'investments', label: 'Investments', icon: TrendingUp, color: 'text-green-400' },
   { id: 'lending', label: 'Lending', icon: HeartHandshake, color: 'text-rose-400' },
   { id: 'assets', label: 'Assets', icon: Landmark, color: 'text-cyan-400' },
