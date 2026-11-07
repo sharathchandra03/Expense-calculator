@@ -14,17 +14,19 @@ import { NetWorthService, NET_WORTH_COLORS } from '@/services/NetWorthService'
  * Reads live data itself, so it can be dropped into any screen.
  */
 export function NetWorthCard({ className, title = 'Net worth' }: { className?: string; title?: string }) {
+  const accounts = useLiveQuery(() => db.accounts.toArray())
   const assets = useLiveQuery(() => db.assets.toArray())
   const investments = useLiveQuery(() => db.investments.toArray())
   const lending = useLiveQuery(() => db.lending.toArray())
 
   const breakdown = React.useMemo(
     () => NetWorthService.compute(
+      Array.isArray(accounts) ? accounts : [],
       Array.isArray(assets) ? assets : [],
       Array.isArray(investments) ? investments : [],
       Array.isArray(lending) ? lending : [],
     ),
-    [assets, investments, lending],
+    [accounts, assets, investments, lending],
   )
   const segments = React.useMemo(() => NetWorthService.segments(breakdown), [breakdown])
   const hasBar = segments.some(s => s.percentage > 0)

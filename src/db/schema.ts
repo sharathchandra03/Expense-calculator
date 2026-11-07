@@ -24,6 +24,23 @@ export interface Transaction {
   isSimulated?: boolean; // true for sandbox data — must always be labelled
 }
 
+// One line in a lending record's history: the original loan, each repayment,
+// amount changes and the final settlement. Money events link to the ledger
+// transaction they created so they can be reversed.
+export type LendingEntryKind = 'initial' | 'repayment' | 'settlement' | 'increase' | 'decrease';
+export interface LendingEntry {
+  id: string;
+  kind: LendingEntryKind;
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:mm
+  amount: number; // always a positive magnitude
+  balanceAfter: number; // outstanding principal after this entry
+  accountId?: string;
+  transactionId?: string; // ledger transaction created for this entry
+  note?: string;
+  createdAt: string; // ISO timestamp (ordering)
+}
+
 // Define lending structure (loans given to/taken from others)
 export interface Lending {
   id: string;
@@ -36,6 +53,9 @@ export interface Lending {
   status: 'active' | 'paid';
   createdAt: string; // YYYY-MM-DD
   description?: string;
+  // NEW: full history (repayments, amount changes, settlement). Optional so
+  // older records keep working; the UI derives a starting entry for them.
+  history?: LendingEntry[];
 }
 
 // Define assets structure (cash, bank, stock, gold, crypto, etc.)

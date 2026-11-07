@@ -371,15 +371,17 @@ export function QuickAddModal({ isOpen, onClose, onNavigateToTab }: QuickAddModa
         ''
 
       await db.transaction('rw', LendingService.TABLES, async () => {
+        const lendingId = generateUUID()
         await db.lending.add({
-          id: generateUUID(), contactName: data.contactName, type: 'lent', amount: data.amount,
+          id: lendingId, contactName: data.contactName, type: 'lent', amount: data.amount,
           interestRate: data.interestRate, interestType: data.interestType,
           expectedRepaymentDate: data.expectedRepaymentDate || '', status: 'active',
-          createdAt: new Date().toISOString(), description: data.description,
+          createdAt: new Date().toISOString(), description: data.description, history: [],
         } as any)
-        if (accountId) {
-          await LendingService.recordNew('lent', data.contactName, data.amount, accountId)
-        }
+        await LendingService.record({
+          recordId: lendingId, kind: 'lent', contact: data.contactName,
+          event: 'initial', amount: data.amount, accountId: accountId || undefined,
+        })
       })
       flashSaved()
     } catch (err) { console.error('Error saving lending:', err) }

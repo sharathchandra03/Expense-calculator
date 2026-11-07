@@ -171,21 +171,17 @@ export function AssetsTracker() {
       const totalAmount = Math.round((item.amount + accrued) * 100) / 100
 
       await db.transaction('rw', LendingService.TABLES, async () => {
-        await db.lending.update(item.id, {
-          status: 'paid',
-        })
-
         // Lent: the repayment comes back in. Borrowed: you pay it back out.
-        // Recorded as a real transaction so the ledger, balances and Statistics all agree.
-        if (cashAccount && totalAmount > 0) {
-          await LendingService.recordRepayment(
-            item.type,
-            item.contactName,
-            totalAmount,
-            cashAccount.id,
-            accrued > 0 ? 'Settled, including interest' : 'Settled',
-          )
-        }
+        // Recorded as a real transaction and in the borrower's history.
+        await LendingService.record({
+          recordId: item.id,
+          kind: item.type,
+          contact: item.contactName,
+          event: 'settlement',
+          amount: totalAmount,
+          accountId: cashAccount && totalAmount > 0 ? cashAccount.id : undefined,
+          note: accrued > 0 ? 'Settled, including interest' : 'Settled',
+        })
       })
     } catch (err) {
       console.error('Failed to settle debt:', err)
@@ -241,6 +237,9 @@ export function AssetsTracker() {
 
       {subTab === 'assets' ? (
         <div className="space-y-5">
+          {/* Super total: accounts + other assets + investments + lent out, minus borrowed */}
+          <NetWorthCard />
+
           {/* Valuation History Line Chart */}
           {mounted && getChartData().length > 1 && (
             <motion.div
@@ -300,9 +299,6 @@ export function AssetsTracker() {
               </Card>
             </motion.div>
           )}
-
-          {/* Super total: accounts & assets + investments + lent out, minus borrowed */}
-          <NetWorthCard />
 
           {/* Assets Inventory List */}
           <div className="space-y-3">

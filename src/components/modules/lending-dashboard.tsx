@@ -7,7 +7,7 @@ import { db, generateUUID } from '@/db/schema'
 import { formatCurrency, cn } from '@/lib/utils'
 import {
   Heart, TrendingUp, Clock, AlertCircle, Check, X,
-  ChevronRight, Calendar, Percent, User, Trash2, Edit2
+  ChevronRight, Calendar, Percent, User, Trash2, Edit2, History, Plus, CheckCircle2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,7 +19,8 @@ import { useUndo } from '@/components/ui/undo-toast'
 import { useToast } from '@/components/ui/toast-notification'
 import { AccountSelect } from '@/components/ui/account-select'
 import { LendingService } from '@/services/LendingService'
-import { MoneyMovementService } from '@/services/MoneyMovementService'
+import { Amount } from '@/components/ui/amount'
+import { LendingHistorySheet } from '@/components/modules/lending-history-sheet'
 import { SmartDefaultsService } from '@/services/SmartDefaultsService'
 
 /** Pick a sensible default account: last used, else bank, else cash, else the first one. */
@@ -37,6 +38,26 @@ function useDefaultAccount() {
     )
   }, [list])
   return { accounts: list, defaultId }
+}
+
+/** Checklist of where a recorded payment will appear. */
+function WhereItShowsUp({ lines }: { lines: { label: string; value: string }[] }) {
+  return (
+    <div className="rounded-xl border border-primary/15 bg-primary/5 px-3 py-2.5">
+      <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">When you save, this updates</p>
+      <ul className="space-y-1.5">
+        {lines.map(l => (
+          <li key={l.label} className="flex items-start gap-2 text-[11.5px] leading-snug">
+            <CheckCircle2 className="mt-px h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />
+            <span className="min-w-0">
+              <span className="font-semibold text-foreground">{l.label}</span>
+              <span className="text-muted-foreground"> · {l.value}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 /** Small info line explaining which transaction will be created. */
@@ -64,10 +85,13 @@ interface LendingRecord {
 export function LendingDashboard() {
   const [filterType, setFilterType] = useState<'all' | 'lent' | 'borrowed'>('all')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTab, setEditTab] = useState<'edit' | 'payment'>('edit')
   const [showNewForm, setShowNewForm] = useState(false)
   // Confirmation dialog state
   const [confirmAction, setConfirmAction] = useState<{ type: 'delete'; id: string; name: string } | null>(null)
   const [settleId, setSettleId] = useState<string | null>(null)
+  const [historyId, setHistoryId] = useState<string | null>(null)
+  const [historyJustRecorded, setHistoryJustRecorded] = useState(false)
 
   const { showUndo } = useUndo()
   const lending = useLiveQuery(() => db.lending.toArray()) || []
@@ -285,6 +309,7 @@ export function LendingDashboard() {
                 const daysLeft = record.expectedRepaymentDate ? daysUntilDue(record.expectedRepaymentDate) : 0
                 const isOverdue = daysLeft < 0
                 const isActive = record.status === 'active'
+                const summary = LendingService.summarize(record)
 
                 return (
                   <motion.div
@@ -294,96 +319,131 @@ export function LendingDashboard() {
                     exit={{ opacity: 0, x: 20 }}
                     transition={{ delay: i * 0.05 }}
                     className={cn(
-                      'p-4 rounded-lg border transition-all',
+                      'p-4 rounded-2xl border transition-all',
                       isActive
                         ? 'bg-secondary/50 border-border/50 hover:border-primary/30'
                         : 'bg-secondary/30 border-border/30 opacity-60'
                     )}
                   >
-                    <div className="space-y-3">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <User className="w-4 h-4 text-muted-foreground" />
-                            <p className="font-semibold text-foreground">{record.contactName}</p>
+                    <div className="space-y-3.5">
+                      {/* Header: avatar, name, type, actions */}
+                      <div className="flex items-start gap-3">
+                        <div className={cn(
+                          'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-[15px] font-bold',
+                          record.type === 'lent' ? 'bg-pink-500/15 text-pink-500' : 'bg-blue-500/15 text-blue-500'
+                        )}>
+                          {record.contactName.trim().charAt(0).toUpperCase() || <User className="h-4 w-4" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <p className="truncate text-[15px] font-bold text-foreground">{record.contactName}</p>
                             <span className={cn(
-                              'text-xs font-semibold uppercase px-2 py-1 rounded-full',
+                              'rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
                               record.type === 'lent'
-                                ? 'bg-pink-500/20 text-pink-600 dark:text-pink-400'
-                                : 'bg-blue-500/20 text-blue-600 dark:text-blue-400'
+                                ? 'bg-pink-500/15 text-pink-600 dark:text-pink-400'
+                                : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
                             )}>
                               {record.type === 'lent' ? 'Lent' : 'Borrowed'}
                             </span>
+                            {!isActive && (
+                              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Settled</span>
+                            )}
                           </div>
-                          <p className="text-xs text-muted-foreground mt-1">{record.description}</p>
+                          {record.description && (
+                            <p className="mt-0.5 truncate text-[12px] text-muted-foreground">{record.description}</p>
+                          )}
                         </div>
-
-                        <div className="flex items-center gap-1">
+                        <div className="flex flex-shrink-0 items-center">
                           <button
-                            onClick={() => setEditingId(record.id)}
-                            className="p-2 hover:bg-primary/10 rounded-lg transition-colors"
+                            onClick={() => { setEditTab('edit'); setEditingId(record.id) }}
+                            className="rounded-full p-2 transition-colors hover:bg-primary/10"
                             aria-label="Edit lending record"
                           >
-                            <Edit2 className="w-4 h-4 text-muted-foreground hover:text-primary" />
+                            <Edit2 className="h-4 w-4 text-muted-foreground" />
                           </button>
                           <button
                             onClick={() => setConfirmAction({ type: 'delete', id: record.id, name: record.contactName })}
-                            className="p-2 hover:bg-destructive/10 rounded-lg transition-colors"
+                            className="rounded-full p-2 transition-colors hover:bg-destructive/10"
                             aria-label="Delete lending record"
                           >
-                            <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
+                            <Trash2 className="h-4 w-4 text-muted-foreground" />
                           </button>
                         </div>
                       </div>
 
-                      {/* Details Grid */}
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="bg-background/50 p-2 rounded-lg">
-                          <p className="text-muted-foreground">Principal</p>
-                          <p className="font-semibold text-foreground">{formatCurrency(record.amount)}</p>
-                        </div>
-                        <div className="bg-background/50 p-2 rounded-lg">
-                          <p className="text-muted-foreground">Interest Rate</p>
-                          <p className="font-semibold text-foreground">{record.interestRate}%</p>
-                        </div>
-                        <div className="bg-background/50 p-2 rounded-lg">
-                          <p className="text-muted-foreground">Accrued Interest</p>
-                          <p className="font-semibold text-emerald-500">{formatCurrency(record.accruedInterest)}</p>
-                        </div>
-                        <div className="bg-background/50 p-2 rounded-lg">
-                          <p className="text-muted-foreground">Total Due</p>
-                          <p className="font-semibold text-foreground">
-                            {formatCurrency(record.amount + record.accruedInterest)}
-                          </p>
-                        </div>
+                      {/* Outstanding + interest */}
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                          {isActive ? (record.type === 'lent' ? 'Still owes you' : 'You still owe') : 'Original amount'}
+                        </p>
+                        <Amount value={isActive ? record.amount : summary.total} size="lg" className="mt-0.5 block text-foreground" />
+                        <p className="mt-1 text-[12px] text-muted-foreground">
+                          {record.interestType !== 'none' || record.interestRate > 0
+                            ? <>Interest {record.interestRate}% · Accrued <span className="font-semibold text-emerald-500">{formatCurrency(record.accruedInterest)}</span>
+                                {record.accruedInterest > 0 && isActive && <> · Total due <span className="font-semibold text-foreground">{formatCurrency(record.amount + record.accruedInterest)}</span></>}</>
+                            : 'No interest'}
+                        </p>
                       </div>
 
-                      {/* Due Date & Status */}
-                      <div className="flex items-center justify-between pt-2 border-t border-border/30">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-4 h-4 text-muted-foreground" />
-                          <div>
-                            <p className="text-xs text-muted-foreground">Due</p>
-                            <p className="text-xs font-semibold text-foreground">
-                              {record.expectedRepaymentDate ? new Date(record.expectedRepaymentDate).toLocaleDateString() : 'N/A'}
-                              {isActive && record.expectedRepaymentDate && (
-                                <span className={cn(
-                                  'ml-2',
-                                  isOverdue ? 'text-red-500 font-bold' : 'text-muted-foreground'
-                                )}>
-                                  ({isOverdue ? `${Math.abs(daysLeft)} days overdue` : `in ${daysLeft} days`})
-                                </span>
-                              )}
-                            </p>
+                      {/* Repayment progress (only once something has been paid back) */}
+                      {summary.repaid > 0 && (
+                        <div>
+                          <div className="mb-1 flex items-center justify-between text-[11.5px]">
+                            <span className="text-muted-foreground">
+                              {record.type === 'lent' ? 'Received' : 'Paid'} <span className="font-semibold text-foreground">{formatCurrency(summary.repaid)}</span> of {formatCurrency(summary.total)}
+                            </span>
+                            <span className="font-bold text-emerald-500">{Math.round(summary.progress)}%</span>
+                          </div>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${summary.progress}%` }} />
                           </div>
                         </div>
+                      )}
 
+                      {/* Due date */}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+                        <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-muted-foreground">Due</span>
+                        <span className="font-semibold text-foreground">
+                          {record.expectedRepaymentDate ? new Date(record.expectedRepaymentDate).toLocaleDateString() : 'N/A'}
+                        </span>
+                        {isActive && record.expectedRepaymentDate && (
+                          <span className={cn(
+                            'rounded-full px-2 py-0.5 text-[10.5px] font-semibold',
+                            isOverdue ? 'bg-red-500/15 text-red-500' : 'bg-secondary text-muted-foreground'
+                          )}>
+                            {isOverdue ? `${Math.abs(daysLeft)} days overdue` : daysLeft === 0 ? 'today' : `in ${daysLeft} days`}
+                          </span>
+                        )}
+                        {summary.lastRepayment && (
+                          <span className="ml-auto text-[11px] text-muted-foreground">
+                            Last payment {new Date(summary.lastRepayment.date + 'T00:00:00').toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Actions: three small, equal pills */}
+                      <div className={cn('grid gap-2 pt-0.5', isActive ? 'grid-cols-3' : 'grid-cols-1')}>
+                        {isActive && (
+                          <button
+                            onClick={() => { setEditTab('payment'); setEditingId(record.id) }}
+                            className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-primary/10 px-3 text-[12px] font-semibold text-primary transition-colors hover:bg-primary/15"
+                          >
+                            <Plus className="h-3.5 w-3.5" strokeWidth={2.4} /> Payment
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setHistoryJustRecorded(false); setHistoryId(record.id) }}
+                          className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-border/70 bg-card px-3 text-[12px] font-semibold text-foreground transition-colors hover:bg-secondary"
+                        >
+                          <History className="h-3.5 w-3.5" strokeWidth={2.2} /> History
+                        </button>
                         {isActive && (
                           <button
                             onClick={() => setSettleId(record.id)}
-                            className="px-3 py-1 bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold rounded-lg hover:bg-emerald-500/30 transition-colors"
+                            className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-emerald-500/12 px-3 text-[12px] font-semibold text-emerald-600 transition-colors hover:bg-emerald-500/20 dark:text-emerald-400"
                           >
-                            Mark Settled
+                            <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={2.2} /> Settle
                           </button>
                         )}
                       </div>
@@ -407,8 +467,28 @@ export function LendingDashboard() {
         {editingId && (
           <EditLendingForm
             recordId={editingId}
+            initialTab={editTab}
             lending={lending}
             onClose={() => setEditingId(null)}
+            onRecorded={(id) => { setHistoryJustRecorded(true); setHistoryId(id) }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Per-borrower payment history */}
+      <AnimatePresence>
+        {historyId && (
+          <LendingHistorySheet
+            key={historyId}
+            recordId={historyId}
+            justRecorded={historyJustRecorded}
+            onClose={() => { setHistoryId(null); setHistoryJustRecorded(false) }}
+            onRecordPayment={(id) => {
+              setHistoryId(null)
+              setHistoryJustRecorded(false)
+              setEditTab('payment')
+              setEditingId(id)
+            }}
           />
         )}
       </AnimatePresence>
@@ -483,18 +563,25 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
     try {
       const recordMoney = hasAccounts && !!effectiveAccountId
       await db.transaction('rw', LendingService.TABLES, async () => {
+        const newId = generateUUID()
         await db.lending.add({
-          id: generateUUID(),
+          id: newId,
           ...data,
           contactName: data.contactName.trim(),
           amount: amountNum,
           interestRate: parseFloat(String(data.interestRate)) || 0,
           status: 'active',
           createdAt: new Date().toISOString(),
+          history: [],
         })
-        if (recordMoney) {
-          await LendingService.recordNew(data.type, data.contactName.trim(), amountNum, effectiveAccountId)
-        }
+        await LendingService.record({
+          recordId: newId,
+          kind: data.type,
+          contact: data.contactName.trim(),
+          event: 'initial',
+          amount: amountNum,
+          accountId: recordMoney ? effectiveAccountId : undefined,
+        })
       })
       showToast(recordMoney ? 'Saved and recorded in your transactions' : 'Lending record saved')
       onClose()
@@ -605,12 +692,12 @@ function NewLendingForm({ onClose }: { onClose: () => void }) {
 }
 
 
-function EditLendingForm({ recordId, lending, onClose }: { recordId: string; lending: LendingRecord[]; onClose: () => void }) {
+function EditLendingForm({ recordId, lending, initialTab = 'edit', onClose, onRecorded }: { recordId: string; lending: LendingRecord[]; initialTab?: 'edit' | 'payment'; onClose: () => void; onRecorded?: (id: string) => void }) {
   const record = lending.find((l) => l.id === recordId)
   const { showToast } = useToast()
   const { accounts, defaultId } = useDefaultAccount()
   const [accountId, setAccountId] = useState('')
-  const [activeTab, setActiveTab] = useState<'edit' | 'payment'>('edit')
+  const [activeTab, setActiveTab] = useState<'edit' | 'payment'>(initialTab)
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentNote, setPaymentNote] = useState('')
   const [data, setData] = useState({
@@ -643,18 +730,28 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
       return
     }
     try {
+      const name = data.contactName.trim()
+      const patch = {
+        contactName: name,
+        interestRate: parseFloat(data.interestRate) || 0,
+        interestType: data.interestType,
+        expectedRepaymentDate: data.expectedRepaymentDate,
+        description: data.description,
+      }
       await db.transaction('rw', LendingService.TABLES, async () => {
-        await db.lending.update(recordId, {
-          contactName: data.contactName.trim(),
-          amount: newPrincipal,
-          interestRate: parseFloat(data.interestRate) || 0,
-          interestType: data.interestType,
-          expectedRepaymentDate: data.expectedRepaymentDate,
-          description: data.description,
-        })
-        // The amount changed: that money really moved, so record it.
-        if (principalDelta !== 0 && canRecordMoney) {
-          await LendingService.recordPrincipalChange(kind, data.contactName.trim(), principalDelta, effectiveAccountId)
+        if (principalDelta !== 0) {
+          // The amount changed: log it in the history and, if an account is chosen, record the money movement.
+          await LendingService.record({
+            recordId,
+            kind,
+            contact: name,
+            event: principalDelta > 0 ? 'increase' : 'decrease',
+            amount: Math.abs(principalDelta),
+            accountId: canRecordMoney ? effectiveAccountId : undefined,
+            patch,
+          })
+        } else {
+          await db.lending.update(recordId, patch)
         }
       })
       if (principalDelta !== 0 && canRecordMoney) showToast('Amount updated and recorded in your transactions')
@@ -674,33 +771,23 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
       return
     }
 
-    const newAmount = Math.round((outstanding - paymentNum) * 100) / 100
     try {
       await db.transaction('rw', LendingService.TABLES, async () => {
-        await db.lending.update(recordId, newAmount <= 0 ? { amount: 0, status: 'paid' } : { amount: newAmount })
-
-        if (canRecordMoney) {
-          // Creates the transaction, moves the account balance and writes the timeline log.
-          await LendingService.recordRepayment(kind, record.contactName, paymentNum, effectiveAccountId, paymentNote || undefined)
-        } else {
-          await db.systemLogs.add({
-            id: generateUUID(),
-            timestamp: new Date().toISOString(),
-            type: 'lending',
-            description: `Partial payment of ${formatCurrency(paymentNum)} ${kind === 'lent' ? 'received from' : 'paid to'} ${record.contactName}${paymentNote ? ` - ${paymentNote}` : ''}. Remaining: ${formatCurrency(newAmount)}`,
-            amount: paymentNum,
-          })
-        }
+        await LendingService.record({
+          recordId,
+          kind,
+          contact: record.contactName,
+          event: 'repayment',
+          amount: paymentNum,
+          accountId: canRecordMoney ? effectiveAccountId : undefined,
+          note: paymentNote.trim() || undefined,
+        })
       })
 
-      showToast(`Payment of ${formatCurrency(paymentNum)} recorded${canRecordMoney ? ' in your transactions' : ''}`)
-      setPaymentAmount('')
-      setPaymentNote('')
-      if (newAmount <= 0) {
-        onClose()
-      } else {
-        setData({ ...data, amount: newAmount.toString() })
-      }
+      showToast(`Payment of ${formatCurrency(paymentNum)} recorded${canRecordMoney ? ' in Transactions' : ''}`)
+      // Jump straight to the history so the new entry is visible.
+      onRecorded?.(recordId)
+      onClose()
     } catch {
       showToast('Failed to record payment')
     }
@@ -896,7 +983,22 @@ function EditLendingForm({ recordId, lending, onClose }: { recordId: string; len
                   </label>
                   <AccountSelect value={effectiveAccountId} onChange={setAccountId} placeholder="Select account" />
                   {paymentNum > 0 && (
-                    <ImpactNote>{LendingService.describeImpact(kind, 'repayment', paymentNum)} Your account balance updates too.</ImpactNote>
+                    <WhereItShowsUp
+                      lines={[
+                        {
+                          label: 'Transactions',
+                          value: `${LendingService.txnType(kind, 'repayment') === 'income' ? 'Income' : 'Expense'} · ${kind === 'lent' ? 'Lending' : 'Borrowing'} · ${formatCurrency(paymentNum)}`,
+                        },
+                        {
+                          label: accounts.find(a => a.id === effectiveAccountId)?.name ?? 'Account',
+                          value: `Balance ${LendingService.txnType(kind, 'repayment') === 'income' ? '+' : '-'}${formatCurrency(paymentNum)}`,
+                        },
+                        {
+                          label: `${record.contactName}'s history`,
+                          value: `${kind === 'lent' ? 'Still owes' : 'You still owe'} ${formatCurrency(Math.max(0, outstanding - paymentNum))}`,
+                        },
+                      ]}
+                    />
                   )}
                 </div>
               ) : (
@@ -959,18 +1061,22 @@ function SettleLendingModal({
 
   const handleConfirm = async () => {
     try {
-      let txId: string | null = null
+      let entryId = ''
       await db.transaction('rw', LendingService.TABLES, async () => {
-        await db.lending.update(record.id, { status: 'paid' })
-        if (willRecord) {
-          txId = await LendingService.recordRepayment(kind, record.contactName, amountNum, effectiveAccountId, 'Settled')
-        }
+        const entry = await LendingService.record({
+          recordId: record.id,
+          kind,
+          contact: record.contactName,
+          event: 'settlement',
+          amount: amountNum,
+          accountId: willRecord ? effectiveAccountId : undefined,
+          note: 'Settled',
+        })
+        entryId = entry.id
       })
-      const createdTxId = txId
       onSettled(record.contactName, async () => {
         await db.transaction('rw', LendingService.TABLES, async () => {
-          if (createdTxId) await MoneyMovementService.reverse(createdTxId)
-          await db.lending.update(record.id, { status: 'active' })
+          await LendingService.removeEntry(record.id, entryId)
         })
       })
     } catch {

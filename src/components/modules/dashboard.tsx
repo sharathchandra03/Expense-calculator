@@ -14,6 +14,7 @@ import { FinancialHealthService, FinancialHealthResult } from '@/services/Financ
 import { SyncCard } from '@/components/ui/sync-card'
 import { useUndo } from '@/components/ui/undo-toast'
 import { SmartDefaultsService } from '@/services/SmartDefaultsService'
+import { NetWorthService } from '@/services/NetWorthService'
 import { SmartInsightsService, Insight } from '@/services/SmartInsightsService'
 import { getCategoryConfig } from '@/lib/category-icons'
 import { GoalService } from '@/services/GoalService'
@@ -254,15 +255,12 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
     })
   }, [safeAllTransactions, safeLending, safeAssets, safeBills, safeBudgets, safeGoals, safeInvestments, safeAccounts])
 
-  // Net Worth: use accounts as primary source (always updated by transactions)
-  // Fall back to assets if accounts empty, plus investments + lending
-  const accountsTotal = safeAccounts.reduce((sum, a) => sum + (a.balance || 0), 0)
-  const assetsTotal = safeAssets.reduce((sum, a) => sum + a.balance, 0)
-  const lentOut = safeLending.filter(l => l.type === 'lent' && l.status === 'active').reduce((s, l) => s + l.amount, 0)
-  const borrowed = safeLending.filter(l => l.type === 'borrowed' && l.status === 'active').reduce((s, l) => s + l.amount, 0)
-  // Net Worth: use accounts as primary source if any exist, otherwise fall back to assets
-  const primaryBalance = safeAccounts.length > 0 ? accountsTotal : assetsTotal
-  const netWorth = primaryBalance + investmentsValue + lentOut - borrowed
+  // Net worth: same shared definition used by Assets, Investments and Statistics,
+  // so every screen shows the same figure.
+  const netWorth = React.useMemo(
+    () => NetWorthService.compute(safeAccounts, safeAssets, safeInvestments, safeLending).netWorth,
+    [safeAccounts, safeAssets, safeInvestments, safeLending]
+  )
 
   // Spending trend
   const spendingTrend = React.useMemo(() => {
@@ -465,7 +463,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
 
         {/* Net worth — total net value across accounts, investments & lending */}
         <button
-          onClick={() => onNavigateToTab('accounts')}
+          onClick={() => onNavigateToTab('assets')}
           className="w-full flex items-center justify-between mb-4 p-3 rounded-2xl bg-secondary/60 hover:bg-secondary transition-colors text-left"
         >
           <div className="flex items-center gap-2.5">
@@ -474,7 +472,7 @@ export function Dashboard({ onNavigateToTab }: DashboardProps) {
             </div>
             <div>
               <p className="text-[11px] text-muted-foreground leading-tight">Net worth</p>
-              <p className="text-[10px] text-muted-foreground/60 leading-tight">Accounts, investments &amp; lending</p>
+              <p className="text-[10px] text-muted-foreground/60 leading-tight">Tap to see total assets</p>
             </div>
           </div>
           <span className="text-[15px] font-bold text-foreground">{formatCurrency(netWorth)}</span>
