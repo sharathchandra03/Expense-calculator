@@ -266,7 +266,7 @@ export default function Home() {
         case 'accounts':
           return <AccountManager key="accounts" />
         case 'analytics':
-          return <Analytics key="analytics" />
+          return <Analytics key="analytics" onNavigateToTab={(tab) => handleTabChange(tab)} />
         case 'statistics':
           return <Statistics key="statistics" />
         case 'budgets':

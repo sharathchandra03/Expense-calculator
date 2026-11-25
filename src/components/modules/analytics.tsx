@@ -5,8 +5,10 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/schema'
 import { formatCurrency, cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Download, Pencil } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { CategoryBreakdown } from '@/components/ui/category-breakdown'
+import { BudgetOverview } from '@/components/ui/budget-overview'
+import { BudgetManagementService } from '@/services/BudgetManagementService'
 
 /* ------------------------------------------------------------------ *
  * Types & constants
@@ -45,7 +47,7 @@ const startOfWeek = (d: Date) => {
 /* ------------------------------------------------------------------ *
  * Component
  * ------------------------------------------------------------------ */
-export function Analytics() {
+export function Analytics({ onNavigateToTab }: { onNavigateToTab?: (tab: 'budgets') => void } = {}) {
   const [period, setPeriod] = useState<Period>('month')
   const [anchor, setAnchor] = useState(() => new Date())
   const [customRange, setCustomRange] = useState(() => {
@@ -55,6 +57,8 @@ export function Analytics() {
   })
   const [catMode, setCatMode] = useState<CatMode>('spending')
   const [payMode, setPayMode] = useState<PayMode>('spending')
+  // Today's date, fixed for this visit (used for days left in a budget).
+  const [today] = useState(() => toYMD(new Date()))
 
   const transactions = useLiveQuery(() => db.transactions.toArray()) ?? []
   const accounts = useLiveQuery(() => db.accounts.toArray()) ?? []
@@ -142,22 +146,55 @@ export function Analytics() {
     return Math.max(1, Math.round(ms / 86_400_000) + 1)
   }, [range])
 
-  /* ---- Budget (matches the selected period where possible) ---- */
+  /* ---- Budgets: the same ones set in the Budgets screen ----
+   * Any budget whose own window (e.g. "November 2026") overlaps the selected
+   * range is shown, measured with its own categories, window and "start fresh"
+   * date, so the numbers match the Budgets screen exactly. */
   const budgetData = React.useMemo(() => {
-    const periodForBudget = period === 'week' ? 'weekly' : period === 'year' ? 'yearly' : 'monthly'
-    const active = safeBudgets.filter(b => b.isActive && b.period === periodForBudget)
-    const limit = active.reduce((s, b) => s + b.limit, 0)
-    const spent = summary.spending
-    const remaining = limit - spent
-    const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0
-    // Days left within the current range (for "safe to spend")
-    const now = new Date()
-    const endForSafe = range.end < now ? range.end : range.end
-    const daysLeft = Math.max(1, Math.round((endForSafe.getTime() - Math.max(now.getTime(), range.start.getTime())) / 86_400_000) + 1)
-    const safePerDay = remaining > 0 ? remaining / daysLeft : 0
-    return { limit, spent, remaining, pct, daysLeft, safePerDay, hasBudget: active.length > 0 }
-  }, [safeBudgets, summary.spending, period, range])
+    const rangeStart = toYMD(range.start)
+    const rangeEnd = toYMD(range.end)
+    const items = safeBudgets
+      .filter(b => b.isActive)
+      .map(b => {
+        const win = BudgetManagementService.getCurrentPeriod(b)
+        return { budget: b, win }
+      })
+      // window is [start, end): overlaps when it starts by the range end and ends after the range start
+      .filter(({ win }) => win.start <= rangeEnd && win.end > rangeStart)
+      .map(({ budget, win }) => {
+        const spent = BudgetManagementService.calculateBudgetSpend(safeTx, budget, win.start, win.end)
+        const timing = BudgetManagementService.getTiming(budget)
+        return {
+          id: budget.id,
+          name: budget.name,
+          label: BudgetManagementService.getPeriodLabel(budget),
+          limit: budget.limit,
+          spent,
+          pct: budget.limit > 0 ? Math.min(100, (spent / budget.limit) * 100) : 0,
+          over: spent > budget.limit,
+          timing,
+          safePerDay: timing === 'active' ? BudgetManagementService.getSafeToSpend(budget, safeTx) : 0,
+          daysLeft: timing === 'active'
+            ? Math.max(1, Math.round((new Date(win.end + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()) / 86_400_000))
+            : 0,
+        }
+      })
+      .sort((a, b) => b.pct - a.pct)
 
+    const limit = items.reduce((s, i) => s + i.limit, 0)
+    const spent = items.reduce((s, i) => s + i.spent, 0)
+    const hasActive = items.some(i => i.timing === 'active')
+    return {
+      items,
+      limit,
+      spent,
+      remaining: limit - spent,
+      pct: limit > 0 ? Math.min(100, (spent / limit) * 100) : 0,
+      safePerDay: items.reduce((s, i) => s + i.safePerDay, 0),
+      hasActive,
+      hasBudget: items.length > 0,
+    }
+  }, [safeBudgets, safeTx, range, today])
   /* ---- Categories (donut + ranked list) ---- */
   const categoryData = React.useMemo(() => {
     const src = catMode === 'spending' ? spendingTx : incomeTx
@@ -320,35 +357,28 @@ export function Analytics() {
       {/* ===== Budget ===== */}
       <div>
         <h2 className="text-[19px] font-semibold tracking-tight text-foreground mb-3">Budget</h2>
-        <div className="rounded-[1.6rem] bg-card border border-border/70 p-6 shadow-card">
-          {budgetData.hasBudget ? (
-            <>
-              <BudgetGauge remaining={budgetData.remaining} pct={budgetData.pct} />
-              <div className="flex items-end justify-between mt-4">
-                <div>
-                  <p className="text-[13px] text-muted-foreground">Spent</p>
-                  <p className="text-[17px] font-extrabold text-foreground">{formatCurrency(budgetData.spent)}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[13px] text-muted-foreground flex items-center gap-1 justify-end">
-                    Limit <Pencil className="w-3 h-3" />
-                  </p>
-                  <p className="text-[17px] font-extrabold text-foreground">{formatCurrency(budgetData.limit)}</p>
-                </div>
-              </div>
-              <div className="mt-4 pt-4 border-t border-border/60 text-center">
-                <p className="text-[13px] text-muted-foreground">
-                  Safe to spend: <span className="font-extrabold text-positive">{formatCurrency(budgetData.safePerDay)}/day</span> for the rest of this period.
-                </p>
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-6 text-center">
-              <p className="text-[14px] font-semibold text-foreground">No budget set for this period</p>
-              <p className="text-[12px] text-muted-foreground mt-1">Create a budget to track safe-to-spend here.</p>
+        {budgetData.hasBudget ? (
+          <BudgetOverview
+            items={budgetData.items}
+            onManage={onNavigateToTab ? () => onNavigateToTab('budgets') : undefined}
+          />
+        ) : (
+          <div className="flex items-center justify-between gap-3 rounded-[1.6rem] border border-dashed border-border bg-card px-4 py-4">
+            <div className="min-w-0">
+              <p className="text-[14px] font-semibold text-foreground">No budget covers these dates</p>
+              <p className="mt-0.5 text-[12px] text-muted-foreground">Budgets show up here for the months they cover.</p>
             </div>
-          )}
-        </div>
+            {onNavigateToTab && (
+              <button
+                type="button"
+                onClick={() => onNavigateToTab('budgets')}
+                className="h-8 flex-shrink-0 rounded-full bg-primary/10 px-3 text-[12px] font-semibold text-primary hover:bg-primary/15"
+              >
+                Create
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ===== Categories ===== */}
@@ -456,52 +486,6 @@ export function Analytics() {
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ *
- * Budget semicircle gauge
- * ------------------------------------------------------------------ */
-function BudgetGauge({ remaining, pct }: { remaining: number; pct: number }) {
-  // Semicircle arc: 180° sweep. Stroke dasharray on a half-circle path.
-  const R = 80
-  const CX = 100
-  const CY = 100
-  const circumference = Math.PI * R // half circle length
-  const progress = Math.max(0, Math.min(1, pct / 100))
-  const over = remaining < 0
-  const arcColor = over ? 'var(--negative)' : 'var(--positive)'
-
-  // Arc path from left (180°) to right (0°)
-  const arc = `M ${CX - R} ${CY} A ${R} ${R} 0 0 1 ${CX + R} ${CY}`
-
-  return (
-    <div className="relative w-full flex flex-col items-center">
-      <svg viewBox="0 0 200 112" className="w-full max-w-[280px]">
-        {/* Track */}
-        <path d={arc} fill="none" stroke="var(--secondary)" strokeWidth={16} strokeLinecap="round" />
-        {/* Progress */}
-        <path
-          d={arc}
-          fill="none"
-          stroke={arcColor}
-          strokeWidth={16}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={circumference * (1 - progress)}
-          style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.32,0.72,0,1)' }}
-        />
-      </svg>
-      {/* Center label */}
-      <div className="absolute inset-0 flex flex-col items-center justify-end pb-1">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-          {over ? 'Over by' : 'Remaining'}
-        </p>
-        <p className={cn('text-[28px] font-extrabold tracking-tight', over ? 'text-negative' : 'text-foreground')}>
-          {formatCurrency(Math.abs(remaining))}
-        </p>
       </div>
     </div>
   )
