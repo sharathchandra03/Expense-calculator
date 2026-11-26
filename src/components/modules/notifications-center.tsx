@@ -7,7 +7,7 @@ import { Bell, Trash2, CheckCircle2, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion, AnimatePresence } from 'framer-motion'
 import { NotificationService } from '@/services/NotificationService'
-import { NotificationGenerator } from '@/services/NotificationGenerator'
+import { NotificationGenerator, dismissNotification } from '@/services/NotificationGenerator'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 export function NotificationsCenter() {
@@ -44,6 +44,7 @@ export function NotificationsCenter() {
   }
 
   const handleDelete = async (id: string) => {
+    dismissNotification(id)   // remember this id — the generator won't re-create it
     await db.notifications.delete(id)
   }
 
@@ -52,6 +53,7 @@ export function NotificationsCenter() {
   }
 
   const handleConfirmDeleteAll = async () => {
+    safeNotifications.forEach(n => dismissNotification(n.id))
     await Promise.all(safeNotifications.map(n => db.notifications.delete(n.id)))
     setClearConfirm(false)
   }
@@ -99,7 +101,7 @@ export function NotificationsCenter() {
               <p className="text-xs font-bold text-muted-foreground uppercase">{type.replace('_', ' ')}</p>
               <div className="space-y-2">
                 <AnimatePresence mode="popLayout">
-                  {notifs.map((notif, idx) => (
+                  {notifs.map((notif) => (
                     <motion.div
                       key={notif.id}
                       layout

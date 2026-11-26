@@ -6,7 +6,15 @@ import { SyncService, SYNCED_PREFERENCE_LS_KEYS } from '@/services/SyncService'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { db } from '@/db/schema'
 
-const DEBOUNCE_MS = 3000 // Wait 3 seconds after last change before pushing
+const DEBOUNCE_MS = 30_000  // 30 seconds after last REAL data change before pushing
+
+/**
+ * Tables that change on nearly every user interaction (every transaction write,
+ * every screen open) but contain data that is already captured by other tables
+ * or regenerated on demand. Excluding them from triggering a debounced push
+ * prevents the sync from firing constantly during normal use.
+ */
+const HIGH_CHURN_TABLES = new Set(['notifications', 'systemLogs', 'financialBriefs'])
 
 /**
  * Patch localStorage ONCE so same-tab writes to a synced preference key emit a
@@ -59,6 +67,8 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
   const pushTimer = useRef<NodeJS.Timeout | null>(null)
   const hasInitialized = useRef(false)
   const isSyncing = useRef(false)
+  const lastPushTime = useRef(0)
+  const MIN_PUSH_INTERVAL = 60_000  // never push more than once per minute
 
   // Patch localStorage once so same-tab preference writes can be detected.
   useEffect(() => {
@@ -101,7 +111,9 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
           const result = await SyncService.pullFromCloud(user.id)
           if (result.success && !result.isEmpty) {
             SyncService.markAccountLinked(user.id)
-            window.location.reload()
+            // All Dexie tables were just repopulated from cloud. useLiveQuery
+            // hooks across the app will fire and re-render automatically, so a
+            // full page reload is NOT needed — and avoids a mid-session flash.
             return
           }
           SyncService.markAccountLinked(user.id)
@@ -124,7 +136,10 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
       if (pushTimer.current) clearTimeout(pushTimer.current)
       pushTimer.current = setTimeout(async () => {
         if (isSyncing.current || !user) return
+        const now = Date.now()
+        if (now - lastPushTime.current < MIN_PUSH_INTERVAL) return
         isSyncing.current = true
+        lastPushTime.current = now
         try {
           await SyncService.pushToCloud(user.id)
         } catch {
@@ -136,34 +151,32 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Listen to all table changes via Dexie hooks.
-    // This list mirrors SyncService.SYNC_TABLES so every table that gets
-    // backed up to the cloud also triggers a debounced auto-push when it
-    // changes. (supportTickets has its own dedicated cloud sync path.)
+    // HIGH_CHURN_TABLES (notifications, systemLogs, financialBriefs) are still
+    // SYNC_TABLES (they're backed up) but they DON'T trigger the debounced push
+    // because they change on every screen open and every transaction. User data
+    // tables (transactions, accounts, goals, budgets …) trigger the push only.
     const tables = [
-      db.transactions,
-      db.accounts,
-      db.assets,
-      db.lending,
-      db.bills,
-      db.goals,
-      db.budgets,
-      db.investments,
-      db.customCategories,
-      db.tags,
-      db.subscriptions,
-      db.debts,
-      db.splits,
-      db.sharedWallets,
-      db.notifications,
-      db.systemLogs,
-      db.financialBriefs,
-      db.templates,
-      db.userProfile,
+      { table: db.transactions, name: 'transactions' },
+      { table: db.accounts, name: 'accounts' },
+      { table: db.assets, name: 'assets' },
+      { table: db.lending, name: 'lending' },
+      { table: db.bills, name: 'bills' },
+      { table: db.goals, name: 'goals' },
+      { table: db.budgets, name: 'budgets' },
+      { table: db.investments, name: 'investments' },
+      { table: db.customCategories, name: 'customCategories' },
+      { table: db.tags, name: 'tags' },
+      { table: db.subscriptions, name: 'subscriptions' },
+      { table: db.debts, name: 'debts' },
+      { table: db.splits, name: 'splits' },
+      { table: db.sharedWallets, name: 'sharedWallets' },
+      { table: db.templates, name: 'templates' },
+      { table: db.userProfile, name: 'userProfile' },
     ]
 
     const hooks: (() => void)[] = []
 
-    tables.forEach((table) => {
+    tables.forEach(({ table }) => {
       const createHook = () => debouncedPush()
       const updateHook = () => debouncedPush()
       const deleteHook = () => debouncedPush()
@@ -200,14 +213,14 @@ export function AutoSyncProvider({ children }: { children: React.ReactNode }) {
   // This ensures cloud always has the latest without risking local data
   useEffect(() => {
     if (!isSupabaseConfigured || !user) return
-    let lastPushTime = 0
-    const MIN_PUSH_INTERVAL = 30000 // 30 seconds
 
     const handleVisibility = async () => {
       if (document.visibilityState === 'visible' && !isSyncing.current && user) {
         const now = Date.now()
-        if (now - lastPushTime < MIN_PUSH_INTERVAL) return
-        lastPushTime = now
+        // Share the same rate-limit ref as the debounced push so they don't both
+        // fire when the user comes back to the tab right after changing data.
+        if (now - lastPushTime.current < MIN_PUSH_INTERVAL) return
+        lastPushTime.current = now
         isSyncing.current = true
         try {
           await SyncService.pushToCloud(user.id)

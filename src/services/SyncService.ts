@@ -120,26 +120,39 @@ export class SyncService {
         return { success: true }
       }
 
-      for (const tableName of SYNC_TABLES) {
-        const table = (db as any)[tableName]
-        if (!table) continue
+      // Read all tables in PARALLEL, then upsert in PARALLEL.
+      // The old serial loop did 19+ sequential round-trips to Supabase which
+      // blocked the main thread for seconds on every push. Reading all tables
+      // concurrently and batching the upserts eliminates that hang.
+      const reads = await Promise.all(
+        SYNC_TABLES.map(async (tableName) => {
+          const table = (db as any)[tableName]
+          if (!table) return { tableName, data: [] }
+          const data = await table.toArray()
+          return { tableName, data }
+        })
+      )
 
-        const data = await table.toArray()
+      const upserts = await Promise.all(
+        reads.map(({ tableName, data }) =>
+          supabase
+            .from('user_data')
+            .upsert(
+              {
+                user_id: userId,
+                table_name: tableName,
+                data,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: 'user_id,table_name' }
+            )
+            .then(({ error }) => ({ tableName, error }))
+        )
+      )
 
-        const { error } = await supabase
-          .from('user_data')
-          .upsert({
-            user_id: userId,
-            table_name: tableName,
-            data: data,
-            updated_at: new Date().toISOString(),
-          }, {
-            onConflict: 'user_id,table_name',
-          })
-
-        if (error) {
-          return { success: false, error: `Failed to sync ${tableName}: ${error.message}` }
-        }
+      const failed = upserts.find(r => r.error)
+      if (failed) {
+        return { success: false, error: `Failed to sync ${failed.tableName}: ${failed.error!.message}` }
       }
 
       // Sync localStorage preferences

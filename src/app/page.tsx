@@ -13,42 +13,46 @@ import { FinancialConnectionService, PENDING_FLAG } from '@/services/FinancialCo
 import { AnimatePresence, motion } from 'framer-motion'
 import { RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ErrorBoundary } from '@/components/ui/error-boundary'
+import { ModuleSkeleton } from '@/components/ui/module-skeleton'
+
+const LOADING = { loading: () => <ModuleSkeleton /> }
 
 // Code-split all secondary modules (loaded on demand)
-const TransactionsLedger = dynamic(() => import('@/components/modules/transactions-ledger').then(m => ({ default: m.TransactionsLedger })), { ssr: false })
-const AssetsTracker = dynamic(() => import('@/components/modules/assets-tracker').then(m => ({ default: m.AssetsTracker })), { ssr: false })
-const Settings = dynamic(() => import('@/components/modules/settings').then(m => ({ default: m.Settings })), { ssr: false })
-const LendingDashboard = dynamic(() => import('@/components/modules/lending-dashboard').then(m => ({ default: m.LendingDashboard })), { ssr: false })
-const GlobalSearch = dynamic(() => import('@/components/modules/global-search').then(m => ({ default: m.GlobalSearch })), { ssr: false })
-const Onboarding = dynamic(() => import('@/components/modules/onboarding').then(m => ({ default: m.Onboarding })), { ssr: false })
-const QuickAddModal = dynamic(() => import('@/components/modules/quick-add-modal').then(m => ({ default: m.QuickAddModal })), { ssr: false })
-const BillsManager = dynamic(() => import('@/components/modules/bills-manager').then(m => ({ default: m.BillsManager })), { ssr: false })
-const BudgetManager = dynamic(() => import('@/components/modules/budget-manager').then(m => ({ default: m.BudgetManager })), { ssr: false })
-const NotificationsCenter = dynamic(() => import('@/components/modules/notifications-center').then(m => ({ default: m.NotificationsCenter })), { ssr: false })
-const GoalsDashboard = dynamic(() => import('@/components/modules/goals-dashboard').then(m => ({ default: m.GoalsDashboard })), { ssr: false })
-const InvestmentTracker = dynamic(() => import('@/components/modules/investment-tracker').then(m => ({ default: m.InvestmentTracker })), { ssr: false })
-const CustomCategories = dynamic(() => import('@/components/modules/custom-categories').then(m => ({ default: m.CustomCategories })), { ssr: false })
-const AccountManager = dynamic(() => import('@/components/modules/account-manager').then(m => ({ default: m.AccountManager })), { ssr: false })
-const Analytics = dynamic(() => import('@/components/modules/analytics').then(m => ({ default: m.Analytics })), { ssr: false })
-const SplitExpenses = dynamic(() => import('@/components/modules/split-expenses').then(m => ({ default: m.SplitExpenses })), { ssr: false })
-const SharedWallets = dynamic(() => import('@/components/modules/shared-wallets').then(m => ({ default: m.SharedWallets })), { ssr: false })
-const DebtPlanner = dynamic(() => import('@/components/modules/debt-planner').then(m => ({ default: m.DebtPlanner })), { ssr: false })
-const ReceiptGallery = dynamic(() => import('@/components/modules/receipt-gallery').then(m => ({ default: m.ReceiptGallery })), { ssr: false })
-const SubscriptionTracker = dynamic(() => import('@/components/modules/subscriptions').then(m => ({ default: m.SubscriptionTracker })), { ssr: false })
-const CSVImport = dynamic(() => import('@/components/modules/csv-import').then(m => ({ default: m.CSVImport })), { ssr: false })
-const AboutApp = dynamic(() => import('@/components/modules/about-app').then(m => ({ default: m.AboutApp })), { ssr: false })
-const HelpSupport = dynamic(() => import('@/components/modules/help-support').then(m => ({ default: m.HelpSupport })), { ssr: false })
-const FAQ = dynamic(() => import('@/components/modules/faq').then(m => ({ default: m.FAQ })), { ssr: false })
-const FinancialHealthDetail = dynamic(() => import('@/components/modules/financial-health').then(m => ({ default: m.FinancialHealthDetail })), { ssr: false })
-const SupportAdmin = dynamic(() => import('@/components/modules/support-admin').then(m => ({ default: m.SupportAdmin })), { ssr: false })
-const MorePage = dynamic(() => import('@/components/modules/more-page').then(m => ({ default: m.MorePage })), { ssr: false })
-const BackupSheet = dynamic(() => import('@/components/modules/backup-sheet').then(m => ({ default: m.BackupSheet })), { ssr: false })
-const DayView = dynamic(() => import('@/components/modules/day-view').then(m => ({ default: m.DayView })), { ssr: false })
-const CalendarViewPage = dynamic(() => import('@/components/modules/calendar-view').then(m => ({ default: m.CalendarViewPage })), { ssr: false })
-const CustomView = dynamic(() => import('@/components/modules/custom-view').then(m => ({ default: m.CustomView })), { ssr: false })
-const PlannedPayments = dynamic(() => import('@/components/modules/planned-payments').then(m => ({ default: m.PlannedPayments })), { ssr: false })
-const ConnectAccounts = dynamic(() => import('@/components/modules/connect-accounts').then(m => ({ default: m.ConnectAccounts })), { ssr: false })
-const Statistics = dynamic(() => import('@/components/modules/statistics').then(m => ({ default: m.Statistics })), { ssr: false })
+const TransactionsLedger = dynamic(() => import('@/components/modules/transactions-ledger').then(m => ({ default: m.TransactionsLedger })), { ssr: false, ...LOADING })
+const AssetsTracker = dynamic(() => import('@/components/modules/assets-tracker').then(m => ({ default: m.AssetsTracker })), { ssr: false, ...LOADING })
+const Settings = dynamic(() => import('@/components/modules/settings').then(m => ({ default: m.Settings })), { ssr: false, ...LOADING })
+const LendingDashboard = dynamic(() => import('@/components/modules/lending-dashboard').then(m => ({ default: m.LendingDashboard })), { ssr: false, ...LOADING })
+const GlobalSearch = dynamic(() => import('@/components/modules/global-search').then(m => ({ default: m.GlobalSearch })), { ssr: false, ...LOADING })
+const Onboarding = dynamic(() => import('@/components/modules/onboarding').then(m => ({ default: m.Onboarding })), { ssr: false, ...LOADING })
+const QuickAddModal = dynamic(() => import('@/components/modules/quick-add-modal').then(m => ({ default: m.QuickAddModal })), { ssr: false, ...LOADING })
+const BillsManager = dynamic(() => import('@/components/modules/bills-manager').then(m => ({ default: m.BillsManager })), { ssr: false, ...LOADING })
+const BudgetManager = dynamic(() => import('@/components/modules/budget-manager').then(m => ({ default: m.BudgetManager })), { ssr: false, ...LOADING })
+const NotificationsCenter = dynamic(() => import('@/components/modules/notifications-center').then(m => ({ default: m.NotificationsCenter })), { ssr: false, ...LOADING })
+const GoalsDashboard = dynamic(() => import('@/components/modules/goals-dashboard').then(m => ({ default: m.GoalsDashboard })), { ssr: false, ...LOADING })
+const InvestmentTracker = dynamic(() => import('@/components/modules/investment-tracker').then(m => ({ default: m.InvestmentTracker })), { ssr: false, ...LOADING })
+const CustomCategories = dynamic(() => import('@/components/modules/custom-categories').then(m => ({ default: m.CustomCategories })), { ssr: false, ...LOADING })
+const AccountManager = dynamic(() => import('@/components/modules/account-manager').then(m => ({ default: m.AccountManager })), { ssr: false, ...LOADING })
+const Analytics = dynamic(() => import('@/components/modules/analytics').then(m => ({ default: m.Analytics })), { ssr: false, ...LOADING })
+const SplitExpenses = dynamic(() => import('@/components/modules/split-expenses').then(m => ({ default: m.SplitExpenses })), { ssr: false, ...LOADING })
+const SharedWallets = dynamic(() => import('@/components/modules/shared-wallets').then(m => ({ default: m.SharedWallets })), { ssr: false, ...LOADING })
+const DebtPlanner = dynamic(() => import('@/components/modules/debt-planner').then(m => ({ default: m.DebtPlanner })), { ssr: false, ...LOADING })
+const ReceiptGallery = dynamic(() => import('@/components/modules/receipt-gallery').then(m => ({ default: m.ReceiptGallery })), { ssr: false, ...LOADING })
+const SubscriptionTracker = dynamic(() => import('@/components/modules/subscriptions').then(m => ({ default: m.SubscriptionTracker })), { ssr: false, ...LOADING })
+const CSVImport = dynamic(() => import('@/components/modules/csv-import').then(m => ({ default: m.CSVImport })), { ssr: false, ...LOADING })
+const AboutApp = dynamic(() => import('@/components/modules/about-app').then(m => ({ default: m.AboutApp })), { ssr: false, ...LOADING })
+const HelpSupport = dynamic(() => import('@/components/modules/help-support').then(m => ({ default: m.HelpSupport })), { ssr: false, ...LOADING })
+const FAQ = dynamic(() => import('@/components/modules/faq').then(m => ({ default: m.FAQ })), { ssr: false, ...LOADING })
+const FinancialHealthDetail = dynamic(() => import('@/components/modules/financial-health').then(m => ({ default: m.FinancialHealthDetail })), { ssr: false, ...LOADING })
+const SupportAdmin = dynamic(() => import('@/components/modules/support-admin').then(m => ({ default: m.SupportAdmin })), { ssr: false, ...LOADING })
+const MorePage = dynamic(() => import('@/components/modules/more-page').then(m => ({ default: m.MorePage })), { ssr: false, ...LOADING })
+const BackupSheet = dynamic(() => import('@/components/modules/backup-sheet').then(m => ({ default: m.BackupSheet })), { ssr: false, ...LOADING })
+const DayView = dynamic(() => import('@/components/modules/day-view').then(m => ({ default: m.DayView })), { ssr: false, ...LOADING })
+const CalendarViewPage = dynamic(() => import('@/components/modules/calendar-view').then(m => ({ default: m.CalendarViewPage })), { ssr: false, ...LOADING })
+const CustomView = dynamic(() => import('@/components/modules/custom-view').then(m => ({ default: m.CustomView })), { ssr: false, ...LOADING })
+const PlannedPayments = dynamic(() => import('@/components/modules/planned-payments').then(m => ({ default: m.PlannedPayments })), { ssr: false, ...LOADING })
+const ConnectAccounts = dynamic(() => import('@/components/modules/connect-accounts').then(m => ({ default: m.ConnectAccounts })), { ssr: false, ...LOADING })
+const Statistics = dynamic(() => import('@/components/modules/statistics').then(m => ({ default: m.Statistics })), { ssr: false, ...LOADING })
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard')
@@ -60,6 +64,19 @@ export default function Home() {
   const [dbReady, setDbReady] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
   const scrollRef = React.useRef<HTMLDivElement>(null)
+
+  // Global unhandled rejection handler — surfaces async errors that would
+  // otherwise fail silently and potentially leave the UI in a broken state.
+  useEffect(() => {
+    const handle = (e: PromiseRejectionEvent) => {
+      // Log so developers can see what failed in the console.
+      console.error('[PennyFlow] Unhandled promise rejection:', e.reason)
+      // Prevent the browser from logging a secondary "Uncaught (in promise)" error.
+      e.preventDefault()
+    }
+    window.addEventListener('unhandledrejection', handle)
+    return () => window.removeEventListener('unhandledrejection', handle)
+  }, [])
 
   // Browser history management for mobile back button
   const handleTabChange = (tab: TabType) => {
@@ -164,17 +181,23 @@ export default function Home() {
     }
 
     // Register Service Worker for PWA in production only.
-    // Auto-update: when a new SW takes control (after a deploy), reload the tab
-    // once so the user gets the latest version without a manual refresh.
+    // Auto-update: when a new SW takes control (after a genuine update), reload
+    // the tab once so the user gets the latest version without a manual refresh.
     if (process.env.NODE_ENV === 'production' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      // Reload exactly once when the active worker changes to the new one.
-      // Show a brief "updating" toast first so a mid-use reload isn't jarring.
+      // Track whether a controller was present BEFORE registration.
+      // controllerchange fires on the very first install too (no old controller →
+      // new controller), and we must NOT reload in that case — the user is just
+      // opening the app for the first time and no reload is needed.
+      const hadControllerBefore = !!navigator.serviceWorker.controller
+
       let hasReloadedForUpdate = false
       navigator.serviceWorker.addEventListener('controllerchange', () => {
+        // Skip if there was no previous controller: this is a first install, not
+        // an update. Reloading here is what caused mid-session blank screens.
+        if (!hadControllerBefore) return
         if (hasReloadedForUpdate) return
         hasReloadedForUpdate = true
         setIsUpdating(true)
-        // Give the toast ~1.2s of screen time, then reload into the new version.
         window.setTimeout(() => window.location.reload(), 1200)
       })
 
@@ -353,16 +376,18 @@ export default function Home() {
 
         {/* Scrollable content area */}
         <div ref={scrollRef} className="flex-1 w-full overflow-y-auto pb-28 bg-background">
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="popLayout">
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
               className={cn("w-full", !isDashboard && "px-5 pt-6")}
             >
-              {renderModule()}
+              <ErrorBoundary key={activeTab} onReset={() => handleTabChange('dashboard')}>
+                {renderModule()}
+              </ErrorBoundary>
             </motion.div>
           </AnimatePresence>
         </div>

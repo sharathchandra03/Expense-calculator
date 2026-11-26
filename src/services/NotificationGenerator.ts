@@ -11,11 +11,47 @@
  * gets a DETERMINISTIC id derived from what it's about plus a time bucket, so
  * re-running the same day updates the same row via `put` rather than creating
  * duplicates.
+ *
+ * DISMISSED NOTIFICATIONS
+ * When the user deletes a notification we record its id in localStorage under
+ * `pennyflow-dismissed-notifications`. The generator skips any id that's in
+ * that list, so deleted alerts never come back. The list is bounded to the last
+ * 500 ids to stop it growing unbounded.
  */
 
 import { db, generateUUID } from '@/db/schema'
 import type { Notification } from '@/db/schema'
 import { BudgetManagementService } from '@/services/BudgetManagementService'
+
+const DISMISSED_KEY = 'pennyflow-dismissed-notifications'
+const DISMISSED_MAX = 500
+
+function getDismissed(): Set<string> {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY)
+    return new Set(raw ? JSON.parse(raw) : [])
+  } catch { return new Set() }
+}
+
+export function dismissNotification(id: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    const set = getDismissed()
+    set.add(id)
+    const trimmed = [...set].slice(-DISMISSED_MAX)
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify(trimmed))
+  } catch {}
+}
+
+export function undismissNotification(id: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    const set = getDismissed()
+    set.delete(id)
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...set]))
+  } catch {}
+}
 
 // How many days ahead of a bill's due date we start reminding.
 const BILL_REMINDER_WINDOW_DAYS = 3
@@ -33,6 +69,8 @@ function stableId(kind: string, entityId: string, bucket: string): string {
 }
 
 async function upsertNotification(n: Notification): Promise<boolean> {
+  // Never re-create a notification the user dismissed.
+  if (getDismissed().has(n.id)) return false
   // Preserve the read flag if this exact notification already exists,
   // so we don't mark something unread again on re-scan.
   const existing = await db.notifications.get(n.id)
